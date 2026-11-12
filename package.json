@@ -30,5 +30,10 @@
     "vocs": "^2.10.0",
     "vue": "^3.4.0",
     "waku": "1.0.0-rc.1"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thai-pc/fluxgantt-docs.git"
+  },
+  "homepage": "https://fluxgantt.thai-pc.com"
 }
