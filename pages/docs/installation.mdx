@@ -1,9 +1,12 @@
 # Installation
 
 :::info
-**0.x — the API is still stabilizing pre-1.0.** The packages are on npm and installable, but a
-minor bump may change an exported type or an event name. Pin a minor range if that matters to you,
-and read each package's `CHANGELOG.md` before upgrading.
+**0.x — the API is still stabilizing pre-1.0.** The packages are on npm and installable. A patch
+release never changes the API; a minor release may change or remove **experimental** (`@beta`)
+symbols, and removes **deprecated** ones only after two minor releases and 30 days. Stable symbols
+break in a minor only for a security fix or a documented-behaviour fix. Pin a minor range
+(`~0.8.0`) if that matters to you, and read each package's `CHANGELOG.md` before upgrading. See
+[Stability](/docs/stability).
 :::
 
 ## Packages

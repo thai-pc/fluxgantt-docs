@@ -1,0 +1,83 @@
+# Stability
+
+FluxGantt is still **0.x**. It follows semver with the usual 0.x reading: the **minor** number
+carries breaking changes, the **patch** number never does. On top of that, every exported symbol
+carries a stability tier, so you can tell which breaking changes to expect and which to rule out.
+
+This page is a summary. The policy itself, including what counts as public API and how CI enforces
+it, is [`STABILITY.md`](https://github.com/thai-pc/fluxgantt/blob/master/STABILITY.md) in the main
+repository; where the two differ, that file wins.
+
+## Tiers
+
+The tier is a TSDoc tag in the source. It shows in your editor's hover and in the committed API
+reports (`etc/*.api.md` in each package).
+
+| Tier | Tag | What it promises |
+|---|---|---|
+| Stable | none (`@public`) | Changes only as described under [What a release may change](#what-a-release-may-change). |
+| Experimental | `@beta` | May change or be removed in **any minor** release, without a deprecation window. Every such change is announced in the changelog with a `Beta:` line. A patch release never changes it. |
+| Deprecated | `@deprecated` | Still works. Removed only after the [deprecation window](#deprecation-window). The tag names the replacement, or says there is none. |
+
+These docs say "experimental" for `@beta`. The [API reference](/docs/api) marks every experimental
+and deprecated export; anything unmarked is stable.
+
+New public API ships as experimental in its first minor release and is promoted to stable in the
+next minor if it is unchanged. In 0.8.0, for example, the `task:updated` event and the wrappers'
+`onTaskUpdated` / `@task-updated` are experimental, as are the stores, the signal primitives, the
+low-level render and interaction helpers, and `GanttAnnouncement`.
+
+The React and Vue wrappers follow the same tiers for their own symbols. A type they re-export from
+core carries core's tier.
+
+## What a release may change
+
+**A 0.x patch release** (`0.8.0` to `0.8.1`) may fix bugs (including behaviour that contradicted
+the docs), improve performance, and change internals and docs. It does not change any exported
+type, event, config field or subpath.
+
+**A 0.x minor release** (`0.8.x` to `0.9.0`) may:
+
+- add exports, optional fields, events and subpaths;
+- add members to unions that appear only in output positions (event payloads, results), such as
+  `ConflictKind`, announcement kinds and event names;
+- change or remove experimental symbols;
+- remove deprecated symbols whose window has passed;
+- break stable API **only** to fix a security issue or a violation of documented behaviour.
+
+Every breaking change is flagged `BREAKING:` in the changelog with a migration note. Read each
+package's `CHANGELOG.md` before upgrading across a minor, or pin a minor range (`~0.8.0`).
+
+Keep a `default` branch in any exhaustive `switch` over an output-position union: a new member is
+not a breaking change. For the same reason, an exhaustive `Record<GanttEventName, ...>` can stop
+compiling when a minor adds an event (0.8.0 added `task:updated`).
+
+Error message text, undocumented CSS class internals and exact bundle bytes are not public API.
+Match errors on their `name` and documented fields, not on the message.
+
+## Deprecation window
+
+A deprecated symbol is removed **no earlier than two minor releases and 30 days** after the release
+that deprecated it, whichever comes later. Something deprecated in 0.8.0 therefore survives at
+least 0.9.x and can go in 0.10.0 at the earliest, and only if 30 days have passed.
+
+The current deprecations, with their replacements, are listed in the
+[API reference](/docs/api#deprecated-exports).
+
+## What 1.0 requires
+
+1.0 is gated on criteria, not a date. In short:
+
+1. No experimental and no deprecated symbols left in any API report.
+2. At least three consecutive minor releases and 90 days with additive-only API changes.
+3. The critical-path, batched-mutation and indexed-store work closed, and the critical path
+   validated against a reference tool.
+4. A decision on the mutation/command layer.
+5. A decision on the Temporal types (polyfill or native), which sit on the public surface.
+6. The docs site live, with a 0.x migration guide and an API page for every stable symbol.
+7. Clean wrapper API reports, with stated peer ranges.
+8. A published support matrix (browsers, Node, minimum TypeScript) and an exercised security
+   process.
+9. Clean `attw` and `publint` results for the dual ESM/CJS package.
+
+The full wording is in [`STABILITY.md` → Criteria for 1.0](https://github.com/thai-pc/fluxgantt/blob/master/STABILITY.md#criteria-for-10).

@@ -141,7 +141,7 @@ same commit path as the pointer (same events, same cascade, same undo), and are 
 - Results are announced to screen readers through a polite live region (moved / resized with the new
   start and end including times, "cannot move" / "cannot resize", linked, "link not created" with a
   `reason` of `duplicate` or `cycle`). Translate or reword them with
-  `messages.announce`, which receives a `GanttAnnouncement`. Pointer drags are not announced; hosts
+  `messages.announce`, which receives a `GanttAnnouncement` (both experimental, `@beta`). Pointer drags are not announced; hosts
   that want that listen to `task:moved` / `task:resized`, which carry no keyboard-versus-pointer flag.
 - Invalid links (to itself, a duplicate, or one that would create a cycle) are dropped without an
   event, like a rejected drop; the keyboard path announces "link not created". Linking from a source

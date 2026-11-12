@@ -3,6 +3,10 @@
 A hand-written reference for `@fluxgantt/core`'s public API. (An auto-generated reference will
 follow once the API stabilizes past 1.0.)
 
+Every export carries a stability tier: stable, **experimental** (`@beta`) or **deprecated**. This
+page marks the experimental and deprecated ones; anything unmarked is stable. See
+[Stability](/docs/stability) for what each tier promises.
+
 ## `createGantt(config)`
 
 ```ts
@@ -68,7 +72,7 @@ reactive. The one deliberate deviation from "unset means core default": the wrap
 | `theme` | `'light' \| 'dark' \| 'auto'` | `'auto'` in core; `'light'` in the React/Vue wrappers | Initial theme. Applied by [`withTheme`](/docs/theming); the base bundle only carries the field. The wrappers compose `withTheme` and keep `theme` reactive. |
 | `rtl` | `boolean` | `false` | Mirror the chart for right-to-left locales: earliest date and label column at the right, upright glyphs, native RTL scrolling. Applied by [`withRtl`](/docs/rtl); the base bundle only carries the field. Construction-time only (rebuild, or change `key` in a wrapper, to switch). |
 | `rollup` | `RollupProvider` | — | Draw each parent at its rolled-up span (earliest descendant start to latest descendant end, duration-weighted progress) instead of its authored dates. Pass the core implementation: `rollup: computeRollup` (from `@fluxgantt/core`). Derived on read: `getTasks()`, export, undo and critical path still see authored dates. Mounted charts only. Construction-time only. See [Hierarchy](/docs/concepts/hierarchy). |
-| `onTaskChange` | `(task, prev) => void` | — | Catch-all fired whenever a task field changes. |
+| `onTaskChange` | `(task, prev) => void` | — | Catch-all fired whenever a task field changes. For a bus-level equivalent that also says which fields changed, see [`task:updated`](#taskupdated-experimental). |
 
 ## `GanttInstance` methods
 
@@ -77,11 +81,11 @@ reactive. The one deliberate deviation from "unset means core default": the wrap
 | Method | Returns | Purpose |
 |---|---|---|
 | `addTask(input)` | `Task` | Add a task; emits `task:added`. |
-| `updateTask(id, patch)` | `Task` | Patch fields; emits `task:*` per changed field. |
+| `updateTask(id, patch)` | `Task` | Patch fields; emits `task:*` per changed field, then `task:updated`. A patch cannot overwrite `id`, `updatedAt` or `createdAt`: passing a whole `Task` as the patch keeps the original `createdAt` (since core 0.8.0; earlier releases let a patch replace it). |
 | `removeTask(id)` | `void` | Remove a task + descendants; emits `dependency:removed`/`task:removed`. |
-| `moveTask(id, newStart)` | `Task` | Shift start+end by the same delta; emits `task:moved`. |
-| `resizeTask(id, newDuration)` | `Task` | Set duration (working hours); emits `task:resized`. |
-| `setProgress(id, progress)` | `Task` | Set progress `0..1`; emits `task:progressed`. |
+| `moveTask(id, newStart)` | `Task` | Shift start+end by the same delta; emits `task:moved`, then `task:updated`. |
+| `resizeTask(id, newDuration)` | `Task` | Set duration (working hours); emits `task:resized`, then `task:updated`. |
+| `setProgress(id, progress)` | `Task` | Set progress `0..1`; emits `task:progressed`, then `task:updated`. |
 | `getTask(id)` | `Task \| undefined` | Look up one task. |
 | `getTasks()` | `Task[]` | All tasks. |
 | `findTasks(predicate)` | `Task[]` | Filter tasks. |
@@ -441,6 +445,7 @@ Requires the `withIo` mixin (`@fluxgantt/core/io`).
 | `task:resized` | `(task: Task, prevDuration: number)` |
 | `task:progressed` | `(task: Task, prevProgress: number)` |
 | `task:removed` | `(taskId: TaskId)` |
+| `task:updated` | `(payload: TaskUpdatedPayload)` — **experimental** (`@beta`). Any field-level change of an existing task. See [`task:updated`](#taskupdated-experimental) |
 | `dependency:added` | `(dependency: Dependency)` |
 | `dependency:removed` | `(dependencyId: DependencyId)` |
 | `critical-path:computed` | `(criticalTaskIds: readonly TaskId[])` |
@@ -483,7 +488,59 @@ persistence hook:
 
 The five task/dependency events take an optional third argument,
 `meta?: { source: 'undo' | 'redo' }`, present only when the change came from a replay — see
-[History](#history-undo--redo).
+[History](#history-undo--redo). `task:updated` carries the same information as `payload.source`
+instead.
+
+### `task:updated` (experimental)
+
+:::warning
+**Experimental (`@beta`).** `task:updated`, `TaskUpdatedPayload` and `TaskField` may change or be
+removed in any minor release without a deprecation window. See [Stability](/docs/stability).
+:::
+
+One event for every write that changed at least one field of an existing task: `updateTask`,
+`moveTask`, `resizeTask`, `setProgress`, every shift of an auto-schedule cascade, and undo/redo of
+any of these.
+
+```ts
+type TaskField = keyof TaskPatch;
+
+interface TaskUpdatedPayload {
+  readonly taskId: TaskId;
+  readonly task: Task;      // the task after the write
+  readonly prev: Task;      // the task before the write
+  readonly changed: readonly TaskField[];
+  readonly source?: 'undo' | 'redo';
+}
+
+gantt.on('task:updated', ({ taskId, changed, source }) => {
+  if (source) return; // replayed by undo/redo
+  save(gantt.getTask(taskId)); // read the live task, not the snapshot
+});
+```
+
+- **A superset of `task:moved` / `task:resized` / `task:progressed`.** One write can deliver both a
+  specific event and `task:updated`, so subscribe to one kind, not both, or you will handle the
+  same change twice.
+- **Order.** It fires after the write's specific events and after `onTaskChange`.
+- **What does not fire it.** Adding, removing or importing tasks, any dependency operation, and a
+  no-op patch (a patch that changes nothing; `onTaskChange` still fires for that one).
+- **How fields are compared.** `start` and `end` compare by instant, so a shape-only change (a
+  string replaced by an equal-instant `ZonedDateTime`) emits nothing. Every other field compares
+  with `Object.is`, so replacing `meta` with a deep-equal object counts as changed. `updatedAt` is
+  ignored.
+- **`changed` is a set.** Its order is unspecified; do not rely on it.
+- **`task` and `prev` are write-time snapshots.** Do not mutate them. To persist a task, read
+  `getTask(taskId)` while handling the event.
+- **Nested writes.** A write, `undo()` or `redo()` made from inside a listener (or from
+  `onTaskChange`) runs as its own command, and its events are delivered before the rest of the
+  outer command's events. Undoing a change from its own listener to "reject" it is not supported:
+  validate before writing, or defer the follow-up with `queueMicrotask`.
+- **`source`** is present only when the change came from `undo()` or `redo()`.
+- A host that keeps an exhaustive `Record<GanttEventName, ...>` must add the new key.
+
+In React pass [`onTaskUpdated`](/docs/frameworks/react#event-callbacks); in Vue listen to
+[`@task-updated`](/docs/frameworks/vue#emits).
 
 `renderer:selected` is the reliable way to know a large chart has become visible: above the
 2000-task auto-switch threshold, `mount()` returns synchronously but the Canvas module loads
@@ -499,22 +556,39 @@ and paints afterwards, and this event fires once it has (or once the SVG fallbac
 | `importCsv(csv, options?)` | Validate + parse CSV → `{ tasks }`. (`@fluxgantt/core/io`) |
 | `exportJson`, `exportCsv`, `exportSvg`, `exportPng` | Pure export functions the instance methods delegate to. (`@fluxgantt/core/io`) |
 | `IoValidationError` | Thrown by imports on malformed input. (`@fluxgantt/core/io`) |
-| `createSvgRenderer`, `layoutRows`, `createTimeScale`, … | Low-level render primitives. (`@fluxgantt/core/render`) |
-| `enableDragMove`, `enableDragResize`, `enableKeyboardNav`, … | Low-level gesture recognizers. (`@fluxgantt/core/interaction`) |
+| `createSvgRenderer`, `layoutRows`, `layoutTaskBar`, `createTimeScale`, `ROW_HEIGHT`, … | **Experimental.** Low-level render primitives and layout helpers. (`@fluxgantt/core/render`) |
+| `enableDragMove`, `enableDragResize`, `enableKeyboardNav`, … | **Experimental.** Low-level gesture recognizers. (`@fluxgantt/core/interaction`) |
 | `DEFAULT_CALENDAR` | The Mon–Fri 9–17 UTC default calendar. |
-| `isWorkingDay`, `isHoliday`, `addWorkingHours`, `subtractWorkingHours`, `differenceInWorkingHours`, `normalizeDate` | Calendar-aware date helpers. |
+| `isWorkingDay`, `isHoliday`, `addWorkingHours`, `subtractWorkingHours`, `differenceInWorkingHours`, `normalizeDate` | Calendar-aware date helpers. `normalizeDate` is **experimental**. |
 | `computeCriticalPath` | The pure CPM function (the instance method delegates to it). |
 | `computeRollup(tasks, calendar?)` | Derive each parent's span/progress/duration from its children → `ReadonlyMap<TaskId, RollupResult>`. Pure; never mutates. Throws on a cyclic parent chain. See [Hierarchy](/docs/concepts/hierarchy). |
 | `detectConflicts(tasks, dependencies, calendar, options?)` | The pure conflict detector the `withConflicts` method delegates to → `Conflict[]`. |
 | `CyclicDependencyError` | Thrown by CPM on a cyclic graph. |
-| `signal`, `computed`, `effect`, `batch`, `untracked` | The reactive primitives the store is built on. |
+| `signal`, `computed`, `effect`, `batch`, `untracked`, `ReadonlySignal` | **Experimental.** The reactive primitives the store is built on. |
+| `TaskStore`, `DependencyStore` | **Experimental.** The stores behind the instance. Prefer the `GanttInstance` methods. |
+| `computeCascade` | **Experimental.** The pure auto-schedule cascade. |
 
 ## Key types
 
 `TaskId`, `DependencyId`, `ResourceId`, `BaselineId`, `ProjectId` (branded strings) ·
-`Task`, `TaskInput`, `TaskPatch`, `TaskKind`, `TaskConstraint` · `Dependency`,
+`Task`, `TaskInput`, `TaskPatch`, `TaskKind`, `TaskConstraint` (experimental) · `Dependency`,
 `DependencyInput`, `DependencyType` · `DateInput` · `WorkingCalendar`, `WeekdayCode`,
 `WorkingHours` · `CriticalPathResult`, `TaskSchedule`, `RollupResult` · `ViewMode`, `Density`,
 `SchedulingMode` · `Conflict`, `ConflictKind` · `GanttConfig`, `GanttInstance`, `GanttEventMap`, `GanttEventName`,
 `UnsubscribeFn` · `EventMeta`, `ViewportChangedPayload`, `RendererSelectedPayload`,
-`ImportSummary` (event payloads) · `GanttMessages` (see [i18n](/docs/i18n)).
+`ImportSummary` (event payloads) · `TaskField`, `TaskUpdatedPayload` (experimental; see
+[`task:updated`](#taskupdated-experimental)) · `GanttMessages` (see [i18n](/docs/i18n)) ·
+`GanttAnnouncement` (experimental, as is the `GanttMessages.announce` member that takes it).
+
+## Deprecated exports
+
+These still work. Each is removed no earlier than two minor releases and 30 days after core 0.8.0,
+the release that deprecated it (see [Stability](/docs/stability#deprecation-window)).
+
+| Export | From | Replacement |
+|---|---|---|
+| `Signal` (class) | `@fluxgantt/core` | Annotate with the `ReadonlySignal` type; create signals with `signal()`. A type-only export remains. |
+| `SelectionStore` | `@fluxgantt/core` | `GanttInstance.select()` / `getSelection()`. |
+| `CollapseStore` | `@fluxgantt/core` | `GanttInstance.toggleCollapse()` / `isCollapsed()`. |
+| `ARROWHEAD_MARKER_ID`, `LABEL_COLUMN_WIDTH`, `PIXELS_PER_DAY`, `MAX_GRID_COLUMNS` | `@fluxgantt/core/render` | None. |
+| `TaskStore.restore()`, `DependencyStore.restore()` | `@fluxgantt/core` | None. History replay only: they bypass validation and events. |

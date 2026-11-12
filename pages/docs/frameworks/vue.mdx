@@ -75,11 +75,34 @@ The component emits one kebab-case event per engine event. Listen with `@`:
 | `@task-resized` | `(task, prevDuration)` |
 | `@task-progressed` | `(task, prevProgress)` |
 | `@task-removed` | `(taskId)` |
+| `@task-updated` | `(payload)` — **experimental** (`@beta`), see below |
 | `@dependency-added` | `(dependency)` |
 | `@dependency-removed` | `(dependencyId)` |
 | `@critical-path-computed` | `(criticalTaskIds)` |
 
 Note the events are kebab-case (`@task-moved`, not `@taskMoved`).
+
+`@task-updated` is **experimental** (`@beta`): it may change in any minor release (see
+[Stability](/docs/stability)). It bridges core's [`task:updated`](/docs/api#taskupdated-experimental)
+event and receives its `TaskUpdatedPayload` (`taskId`, `task`, `prev`, `changed`, and `source` for
+undo/redo), which `@fluxgantt/vue` re-exports. It is emitted for every field-level change of an
+existing task, after `@task-moved` / `@task-resized` / `@task-progressed` and after `onTaskChange`,
+so listen to it **instead of** those, not alongside them:
+
+```vue
+<script setup lang="ts">
+import type { TaskUpdatedPayload } from '@fluxgantt/vue';
+
+function onTaskUpdated({ taskId, changed, source }: TaskUpdatedPayload) {
+  if (source) return; // undo/redo replay
+  console.log(`${taskId} changed: ${changed.join(', ')}`);
+}
+</script>
+
+<template>
+  <FluxGantt :tasks="tasks" @task-updated="onTaskUpdated" />
+</template>
+```
 
 ## Template ref → the instance
 
