@@ -1,28 +1,34 @@
 {
-  "name": "docs",
+  "name": "fluxgantt-docs",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "FluxGantt documentation + landing site (Vocs). Not published to npm.",
+  "description": "FluxGantt documentation + landing site (Vocs), deployed to https://fluxgantt.thai-pc.com. Not published to npm.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "dev": "vocs dev",
-    "build": "vocs build && node ../../tooling/scripts/finalize-pages-build.mjs",
+    "build": "vocs build && node scripts/finalize-pages-build.mjs",
     "preview": "vocs preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:imports": "node scripts/check-snippet-imports.mjs",
+    "check": "npm run typecheck && npm run check:imports"
+  },
+  "dependencies": {
+    "@fluxgantt/core": "0.7.0",
+    "@fluxgantt/react": "0.4.2",
+    "@fluxgantt/vue": "0.4.2"
   },
   "devDependencies": {
-    "@fluxgantt/tsconfig": "workspace:*",
+    "@js-temporal/polyfill": "^0.5.1",
     "@types/react": "^19.0.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^6.0.3",
     "vocs": "^2.10.0",
+    "vue": "^3.4.0",
     "waku": "1.0.0-rc.1"
-  },
-  "optionalDependencies": {
-    "@rolldown/binding-darwin-x64": "1.2.9",
-    "@rolldown/binding-darwin-arm64": "1.2.9",
-    "@rolldown/binding-linux-x64-gnu": "1.2.9",
-    "@rolldown/binding-linux-arm64-gnu": "1.2.9"
   }
 }

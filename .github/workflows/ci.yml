@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Build-check only. Deploys happen in Cloudflare Pages' Git integration, outside GitHub Actions
+# (README.md -> Deploy); this job makes a broken build fail the PR before Cloudflare sees it.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # The same .nvmrc Cloudflare Pages' build image reads, so CI and production agree.
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Snippet imports resolve against the published @fluxgantt/* packages
+        run: npm run check:imports
+
+      - name: Build
+        # `vocs build` + scripts/finalize-pages-build.mjs, which fails on zero HTML, a basePath,
+        # an absolute <base href>, or a referenced /assets/ file missing from dist/public.
+        run: npm run build

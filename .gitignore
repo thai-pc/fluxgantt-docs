@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output (Vocs writes dist/public for the static site and dist/server for an unused SSR bundle)
+dist/
+*.tsbuildinfo
+
+# Local Cloudflare / wrangler state
+.wrangler/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
