@@ -55,23 +55,30 @@ After each library release:
 
 A feature PR in the monorepo that changes documented behaviour needs a matching PR here.
 
-## Deploy (Cloudflare Pages)
+## Deploy (Cloudflare Workers, static assets)
 
-Production is `https://fluxgantt.thai-pc.com`, served by Cloudflare Pages through its Git
-integration: every push to `main` deploys, and every PR gets a preview URL on `*.pages.dev`.
+Production is `https://fluxgantt.thai-pc.com`, served by a Cloudflare Worker with **static assets
+only** (no Worker script) through Workers Builds' Git integration: every push to `main` deploys.
+`wrangler.jsonc` declares `dist/public` as the assets directory. It is required: without it,
+Wrangler's framework auto-setup detects Waku (Vocs' renderer) and tries to configure an SSR entry
+(`src/waku.server.tsx`) that does not exist, failing the deploy.
+
 Nothing in `.github/workflows/` deploys; `ci.yml` only build-checks.
 
-Dashboard: **Workers & Pages → Create → Pages → Connect to Git** → this repository.
+Dashboard: **Workers & Pages → Create → Workers → Import a repository** → this repository.
 
 | Setting | Value |
 |---|---|
 | Production branch | `main` |
-| Framework preset | **None** |
 | Root directory | `/` (leave empty) |
 | Build command | `npm ci && npm run build` |
-| Build output directory | `dist/public` |
-| Environment variables (Production **and** Preview) | `SKIP_DEPENDENCY_INSTALL` = `1` |
-| Custom domain | `fluxgantt.thai-pc.com` (Custom domains tab; Cloudflare creates the proxied CNAME and the certificate) |
+| Deploy command | `npx wrangler deploy` (the default; it reads `wrangler.jsonc`) |
+| Environment variables (build) | `SKIP_DEPENDENCY_INSTALL` = `1` |
+| Custom domain | `fluxgantt.thai-pc.com` (Settings → Domains & Routes; Cloudflare creates the DNS record and the certificate) |
+
+`wrangler.jsonc` sets `html_handling: "auto-trailing-slash"` (so `/docs/x` and `/docs/x/` both
+work) and `not_found_handling: "404-page"` (unknown paths get Vocs' `404.html` with a real 404).
+Check locally with `npm run build && npx wrangler@4 dev`.
 
 - **Node:** do **not** set `NODE_VERSION`. The build image reads `.nvmrc`, the same file CI and
   local dev use. Only if the build log shows a different Node should `NODE_VERSION` be set, and
@@ -96,7 +103,7 @@ Three settings in `vocs.config.ts` are what make this work:
 a page carries an absolute `<base href>`, or if any `/assets/...` URL a page references is missing
 from the output.
 
-Vocs emits `pages/docs/x.mdx` as `docs/x/index.html`, so Cloudflare answers `/docs/x` with a 308 to
+Vocs emits `pages/docs/x.mdx` as `docs/x/index.html`, so Cloudflare answers `/docs/x` with a redirect to
 `/docs/x/`. Client-side navigation uses the slash-less form and works either way.
 
 ### Previewing the built site

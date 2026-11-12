@@ -1,0 +1,15 @@
+// Cloudflare Workers static-assets deploy for the docs site.
+// The site is fully static (Vocs prerenders every page into dist/public), so no Worker script is
+// needed. Having this file also stops Wrangler's framework auto-setup, which detects Waku (Vocs'
+// renderer) and tries to configure an SSR entry (src/waku.server.tsx) that does not exist.
+{
+  "name": "fluxgantt-docs",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist/public",
+    // Vocs writes docs/x/index.html; serve /docs/x and /docs/x/ alike.
+    "html_handling": "auto-trailing-slash",
+    // Unknown paths get Vocs' 404.html with a real 404 status.
+    "not_found_handling": "404-page"
+  }
+}
