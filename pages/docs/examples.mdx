@@ -14,8 +14,8 @@ tap "Run this project" first:
 | Headless (Node, no DOM) | [Open the headless example on StackBlitz](https://stackblitz.com/github/thai-pc/fluxgantt/tree/stackblitz/headless?file=index.mjs&title=FluxGantt%20headless) |
 
 The StackBlitz projects are generated from the **latest npm release**: at release time,
-`tooling/scripts/build-stackblitz-examples.mjs` copies the examples to the repo's `stackblitz`
-branch with `workspace:*` replaced by the published versions. The copies under `examples/` track
+[`tooling/scripts/build-stackblitz-examples.mjs`](https://github.com/thai-pc/fluxgantt/blob/master/tooling/scripts/build-stackblitz-examples.mjs) copies the examples to the repo's `stackblitz`
+branch with `workspace:*` replaced by the published versions. The copies under [`examples/`](https://github.com/thai-pc/fluxgantt/tree/master/examples) track
 `master` and may use API that is not released yet; run those from a clone (below).
 
 :::note
@@ -96,7 +96,7 @@ const { criticalTaskIds, projectEnd } = gantt.computeCriticalPath();
 Run it with `node`, in a Worker, in a Lambda, or in a test with no jsdom. The two Temporal lines are
 needed wherever the runtime has no native Temporal, which includes current Node (see
 [Installation](/docs/installation)). [Open the headless example on StackBlitz](https://stackblitz.com/github/thai-pc/fluxgantt/tree/stackblitz/headless?file=index.mjs&title=FluxGantt%20headless)
-to run it in the browser; its source is `tooling/stackblitz-templates/headless/` in the repo. At **{/*sz:hello.2*/}7.35{/*/sz*/} KiB gzip** this
+to run it in the browser; its source is [`tooling/stackblitz-templates/headless/`](https://github.com/thai-pc/fluxgantt/tree/master/tooling/stackblitz-templates/headless) in the main repo. At **{/*sz:hello.2*/}7.35{/*/sz*/} KiB gzip** this
 configuration ships no renderer at all — see [Comparison](/docs/comparison).
 
 ## Planned

@@ -1,11 +1,11 @@
 import { defineConfig } from 'vocs/config';
 
-// FluxGantt docs + landing site. `rootDir: '.'` makes Vocs read pages from `apps/docs/pages`
-// (its default rootDir is `docs`, which would nest awkwardly since this app already lives at
-// `apps/docs`). `srcDir: '.'` matches: Vocs 2.x defaults to `<rootDir>/src/pages`, but pages
-// here live directly under `<rootDir>/pages` (no `src/` nesting). Visual identity mirrors the
-// design tokens in `apps/docs/fluxgantt-spec.md` §8.2: indigo #6366f1 as the accent (lightened
-// to #818cf8 for dark-mode contrast).
+// FluxGantt docs + landing site. `rootDir: '.'` makes Vocs read pages from `./pages` at the repo
+// root (its default rootDir is `docs`). `srcDir: '.'` matches: Vocs 2.x defaults to
+// `<rootDir>/src/pages`, but pages here live directly under `<rootDir>/pages` (no `src/`
+// nesting). Visual identity mirrors the design tokens in the FluxGantt spec §8.2
+// (https://github.com/thai-pc/fluxgantt/blob/master/docs/fluxgantt-spec.md): indigo #6366f1 as
+// the accent (lightened to #818cf8 for dark-mode contrast).
 export default defineConfig({
   rootDir: '.',
   srcDir: '.',
