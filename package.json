@@ -17,9 +17,9 @@
     "check": "npm run typecheck && npm run check:imports"
   },
   "dependencies": {
-    "@fluxgantt/core": "0.7.0",
-    "@fluxgantt/react": "0.4.2",
-    "@fluxgantt/vue": "0.4.2"
+    "@fluxgantt/core": "0.7.1",
+    "@fluxgantt/react": "0.4.3",
+    "@fluxgantt/vue": "0.4.3"
   },
   "devDependencies": {
     "@js-temporal/polyfill": "^0.5.1",
