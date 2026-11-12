@@ -88,7 +88,7 @@ Check locally with `npm run build && npx wrangler@4 dev`.
   identical to CI's.
 - **No browser** is needed by the build.
 
-The output is `dist/public` (23 HTML files), not `dist/`, which also holds an SSR server bundle
+The output is `dist/public` (24 HTML files), not `dist/`, which also holds an SSR server bundle
 the static deploy does not use.
 
 Three settings in `vocs.config.ts` are what make this work:

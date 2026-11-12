@@ -66,6 +66,24 @@ One callback per engine event: `onTaskAdded`, `onTaskMoved`, `onTaskResized`,
 `onCriticalPathComputed`, plus the catch-all `onTaskChange(task, prev)`. These callbacks stay
 reactive — you can pass fresh inline arrows every render.
 
+`onTaskUpdated(payload)` is **experimental** (`@beta`): it may change in any minor release (see
+[Stability](/docs/stability)). It bridges core's [`task:updated`](/docs/api#taskupdated-experimental)
+event and receives its `TaskUpdatedPayload` (`taskId`, `task`, `prev`, `changed`, and `source` for
+undo/redo), which `@fluxgantt/react` re-exports. It fires for every field-level change of an
+existing task, after `onTaskMoved` / `onTaskResized` / `onTaskProgressed` and after `onTaskChange`,
+so use it **instead of** those, not alongside them:
+
+```tsx
+import type { TaskUpdatedPayload } from '@fluxgantt/react';
+
+function onTaskUpdated({ taskId, changed, source }: TaskUpdatedPayload) {
+  if (source) return; // undo/redo replay
+  console.log(`${taskId} changed: ${changed.join(', ')}`);
+}
+
+<FluxGantt tasks={tasks} onTaskUpdated={onTaskUpdated} />
+```
+
 ## Uncontrolled data (important)
 
 Every `GanttConfig` prop except `theme` and `onTaskChange` is **read once**,

@@ -91,6 +91,7 @@ export default defineConfig({
       text: 'Reference',
       items: [
         { text: 'API Surface', link: '/docs/api' },
+        { text: 'Stability', link: '/docs/stability' },
         { text: 'Theming', link: '/docs/theming' },
         { text: 'Responsive & Touch', link: '/docs/responsive' },
         { text: 'i18n', link: '/docs/i18n' },
