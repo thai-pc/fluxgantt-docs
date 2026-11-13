@@ -79,6 +79,29 @@ If your function throws or returns a non-string, FluxGantt falls back to the Eng
 rather than breaking the chart. It does so silently: this runs once per task per repaint, so a
 warning would print thousands of identical lines in a single paint of a large chart.
 
+## Grid column headers
+
+With [grid columns](/docs/concepts/grid-columns) composed, each column header's text is the
+`header` you give the column (the built-ins default to English: "Name", "Start", "End",
+"Duration", "Progress"), so translate the headers in `columns`. Start/end dates and durations are
+formatted with `Intl` in your `locale`.
+
+A header's **accessible name** defaults to its header text; assistive technology adds the column
+position from `aria-colindex`. To change it, supply `messages.gridColumnLabel` (experimental):
+
+```ts
+createGantt({
+  tasks,
+  locale: 'de',
+  messages: {
+    gridColumnLabel: ({ header, index, count }) => `${header}, Spalte ${index} von ${count}`,
+  },
+});
+```
+
+It receives `{ columnId, header, index, count, locale }` (`index` is 1-based). Throwing or
+returning a non-string falls back to the header text.
+
 ## Construction-time only
 
 `locale`, `ariaLabel` and `messages` are all read **once**, when the chart mounts. There is no
@@ -91,11 +114,11 @@ change the `key` prop:
 
 ## Not yet supported
 
-- **Translated built-in strings.** Core ships English only; the two library-composed strings are
+- **Translated built-in strings.** Core ships English only; the library-composed strings are
   yours to supply through `messages` (above). RTL *geometry* is supported — see
   [Right-to-left charts](/docs/rtl).
 - **A different date skeleton.** Dates arrive pre-formatted; you cannot currently ask for a
   different `Intl.DateTimeFormatOptions` per message.
-- **Other message keys** — grid column headers, tooltips, empty state. These either localize
+- **Other message keys** — tooltips, empty state. These either localize
   through `Intl` already or have no library-composed text today. `GanttMessages` is an interface of
   optional keys, so adding them later is not a breaking change.

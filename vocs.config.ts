@@ -67,6 +67,7 @@ export default defineConfig({
         { text: 'Hierarchy', link: '/docs/concepts/hierarchy' },
         { text: 'Critical Path', link: '/docs/concepts/critical-path' },
         { text: 'Working Calendar', link: '/docs/concepts/working-calendar' },
+        { text: 'Grid Columns', link: '/docs/concepts/grid-columns' },
       ],
     },
     {

@@ -13,7 +13,7 @@ a minor bump may change an exported type or an event name.
 
 - **{/*sz:hello.2*/}8.18{/*/sz*/} KiB gzip for the engine.** Rendering, interaction, IO, theming and responsive behaviour
   are opt-in imports on separate subpaths, so you download what you compose — an editable chart is
-  {/*sz:editable.2*/}20.89{/*/sz*/} KiB, everything composed is {/*sz:kitchen.2*/}25.55{/*/sz*/} KiB. Budgets are enforced on every pull request. These sizes exclude the Temporal polyfill (~45.8 KiB gzip), which runtimes without native Temporal (Node 22/24, older browsers) need.
+  {/*sz:editable.2*/}21.24{/*/sz*/} KiB, and an editable chart with import/export is {/*sz:kitchen.2*/}25.92{/*/sz*/} KiB. Budgets are enforced on every pull request. These sizes exclude the Temporal polyfill (~45.8 KiB gzip), which runtimes without native Temporal (Node 22/24, older browsers) need.
   See [Comparison](/docs/comparison) for how that lands against dhtmlx, Bryntum, SVAR and Frappe.
 - **Headless engine.** State + compute (critical path, working calendar, cascade) run without
   a DOM. The render layer is a separate concern you can swap or server-side-render around.
@@ -85,7 +85,7 @@ Using React or Vue instead? See the [React guide](/docs/frameworks/react) and
 | | FluxGantt | dhtmlx Community | Frappe Gantt |
 |---|---|---|---|
 | License | MIT | MIT | MIT |
-| Bundle (gzip, incl. required CSS) | **{/*sz:editable.2*/}20.89{/*/sz*/} KiB** editable · {/*sz:hello.2*/}8.18{/*/sz*/} KiB headless | 226.18 KiB | 14.89 KiB |
+| Bundle (gzip, incl. required CSS) | **{/*sz:editable.2*/}21.24{/*/sz*/} KiB** editable · {/*sz:hello.2*/}8.18{/*/sz*/} KiB headless | 226.18 KiB | 14.89 KiB |
 | Language | TypeScript-first, branded IDs | JavaScript | JavaScript, no types shipped |
 | Dependency types | FS / SS / FF / SF (+ lag/lead) | all four | FS only |
 | Critical path (CPM) | Built in, color-independent marker | No (PRO only) | No |

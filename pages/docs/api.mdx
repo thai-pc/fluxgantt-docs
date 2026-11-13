@@ -39,6 +39,7 @@ const gantt = withIo(withInteraction(withRender(createGantt({ tasks: [/* … */]
 | `withConflicts(instance, options?)` | `@fluxgantt/core/conflicts` | `detectConflicts()` and the `conflict:detected` event. Headless. See [Schedule conflicts](#schedule-conflicts) |
 | `withEditHooks(instance, options?)` | `@fluxgantt/core/edit-hooks` | No new methods — emits `task:activated` and `task:context-requested` so your app can build its own editor and menu. See [Edit hooks](#edit-hooks) |
 | `withRtl(instance)` | `@fluxgantt/core/rtl` | No new methods — mirrors the chart for right-to-left locales when `rtl: true`; inert otherwise. See [Right-to-left charts](/docs/rtl) |
+| `withGrid(instance, options?)` | `@fluxgantt/core/grid` | **Experimental.** `getGridColumns()`, `setGridColumns()`, `exportGridCsv()` — turns the pinned label column into configurable columns (SVG and Canvas). See [Grid columns](#grid-columns) |
 | `withResponsive(instance, options?)` | `@fluxgantt/core/responsive` | `isCoarsePointer()`, `getLabelColumnWidth()` — and adapts density, hit targets, the label column and touch panning under `(pointer: coarse)`. See [Responsive & touch](/docs/responsive) |
 
 Each mixin mutates and returns the SAME instance, so application order does not matter — but
@@ -350,7 +351,9 @@ gantt.on('task:context-requested', (p) => {
 | `task:context-requested` | right-click; <kbd>ContextMenu</kbd> key; <kbd>Shift</kbd>+<kbd>F10</kbd>; touch long-press | `{ taskId, part, source: 'pointer' \| 'keyboard' \| 'long-press', clientX, clientY, preventDefault() }` |
 
 - **`part`** is `'bar'`, `'label'` or `'row'` (the grid or a dependency arrow). Keyboard gestures
-  always report `'row'`. The collapse toggle glyph, the header and empty space emit nothing.
+  always report `'row'`. `'cell'` (with an experimental `columnId` on the payload) is a member of
+  the `TaskHitPart` union reserved for [grid columns](#grid-columns); nothing reports it yet, but
+  an exhaustive `switch` over `part` needs a `default` branch. The collapse toggle glyph, the header and empty space emit nothing.
   **Canvas mode never reports `'bar'`** (its hit-test is row-wide): treat `'row'` and `'bar'` as
   "the task" and do not rely on `'bar'`.
 - **Coordinates** are viewport (client) coordinates. For keyboard gestures they are the centre of
@@ -425,6 +428,39 @@ Requires the `withIo` mixin (`@fluxgantt/core/io`).
 
 (The pure, instance-free `importJson` / `importCsv` functions are also exported from
 `@fluxgantt/core/io` — see [Import & Export](/docs/import-export).)
+
+### Grid columns
+
+**Experimental.** Added by `withGrid` (`@fluxgantt/core/grid`, since core 0.9.0). Full guide:
+[Grid columns](/docs/concepts/grid-columns).
+
+```ts
+import { withGrid, DEFAULT_GRID_COLUMNS, MAX_COLUMN_COUNT, toColumnId } from '@fluxgantt/core/grid';
+
+const gantt = withGrid(withRender(createGantt({ tasks })), {
+  columns: DEFAULT_GRID_COLUMNS, // name, start, end, duration, progress
+  collapseBelow: 480,            // CSS px; 0 disables
+  durationUnit: 'days',          // or 'hours'
+});
+```
+
+| Method | Returns | Purpose |
+|---|---|---|
+| `getGridColumns()` | `readonly GridColumn[]` | The resolved columns (`id`, `header`, `width`, `minWidth`, `maxWidth`, `align`, `builtIn`) in display order. |
+| `setGridColumns(columns)` | `void` | Replace the columns, one repaint. Throws a `RangeError` on invalid input and changes nothing. |
+| `exportGridCsv()` | `string` | One-way, formula-escaped CSV report of the configured columns. Headless. |
+
+| Export | Purpose |
+|---|---|
+| `withGrid(instance, options?)` | The mixin. Apply once, before the first `mount()`; a second application throws. |
+| `DEFAULT_GRID_COLUMNS` | The default column list. |
+| `MAX_COLUMN_COUNT` | `24`, the `name` column included. |
+| `toColumnId(id)` | Brand a string as a `ColumnId`; throws unless it matches `^[A-Za-z0-9_-]{1,64}$`. |
+
+Types: `GridOptions`, `GridCapability`, `GridColumn`, `GridColumnInput`, `GridColumnBase`,
+`BuiltInColumn`, `BuiltInColumnId`, `CustomColumn`, `GridCellContext`, `ColumnAlign`, `ColumnId`.
+`GanttMessages.gridColumnLabel` (experimental) names a column header for assistive technology
+([i18n](/docs/i18n#grid-column-headers)).
 
 ### Events & lifecycle
 
@@ -556,7 +592,7 @@ and paints afterwards, and this event fires once it has (or once the SVG fallbac
 | `importCsv(csv, options?)` | Validate + parse CSV → `{ tasks }`. (`@fluxgantt/core/io`) |
 | `exportJson`, `exportCsv`, `exportSvg`, `exportPng` | Pure export functions the instance methods delegate to. (`@fluxgantt/core/io`) |
 | `IoValidationError` | Thrown by imports on malformed input. (`@fluxgantt/core/io`) |
-| `createSvgRenderer`, `layoutRows`, `layoutTaskBar`, `createTimeScale`, `ROW_HEIGHT`, … | **Experimental.** Low-level render primitives and layout helpers. (`@fluxgantt/core/render`) |
+| `createSvgRenderer`, `layoutRows`, `layoutTaskBar`, `createTimeScale`, `ROW_HEIGHT`, … | **Experimental.** Low-level render primitives and layout helpers. (`@fluxgantt/core/render`) Since core 0.9.0 `createSvgRenderer` takes `paintHooks` (a list of `PaintHook` functions, called with a `PaintEvent` after each paint; also live on `handle.paintHooks`) in place of the removed `onPaint` option. `InteractiveRendererHandle.fixedLabelWidth` marks a handle whose pinned column width a mixin owns (the grid). |
 | `enableDragMove`, `enableDragResize`, `enableKeyboardNav`, … | **Experimental.** Low-level gesture recognizers. (`@fluxgantt/core/interaction`) |
 | `DEFAULT_CALENDAR` | The Mon–Fri 9–17 UTC default calendar. |
 | `isWorkingDay`, `isHoliday`, `addWorkingHours`, `subtractWorkingHours`, `differenceInWorkingHours`, `normalizeDate` | Calendar-aware date helpers. `normalizeDate` is **experimental**. |
@@ -578,7 +614,9 @@ and paints afterwards, and this event fires once it has (or once the SVG fallbac
 `UnsubscribeFn` · `EventMeta`, `ViewportChangedPayload`, `RendererSelectedPayload`,
 `ImportSummary` (event payloads) · `TaskField`, `TaskUpdatedPayload` (experimental; see
 [`task:updated`](#taskupdated-experimental)) · `GanttMessages` (see [i18n](/docs/i18n)) ·
-`GanttAnnouncement` (experimental, as is the `GanttMessages.announce` member that takes it).
+`GanttAnnouncement` (experimental, as is the `GanttMessages.announce` member that takes it) ·
+`TaskHitPart` (`'bar' | 'label' | 'row' | 'cell'`; an output union, handle unknown members).
+Grid types live on `@fluxgantt/core/grid` ([Grid columns](#grid-columns)).
 
 ## Deprecated exports
 
