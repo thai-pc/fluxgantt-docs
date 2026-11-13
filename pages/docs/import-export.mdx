@@ -45,6 +45,10 @@ const blob = await gantt.exportPng();       // Promise<Blob> — rasterized PNG
   the Canvas export module to load, before rasterizing)
   and returns a `Blob`. Both **throw / reject** if the instance was never mounted (there is no
   sensible empty result for a picture of nothing).
+- With [grid columns](/docs/concepts/grid-columns) composed, both exports include the grid (the
+  header row, the cells and the column dividers), in SVG and in Canvas mode. They always contain
+  every configured column, cut with the same ellipsis as on screen. In Canvas mode the grid
+  painter is a lazy chunk: an `exportSvg()` made before it has loaded has no grid.
 
 ### Exporting a large (Canvas-mode) chart
 
@@ -82,6 +86,28 @@ a.download = 'plan.png';
 a.click();
 URL.revokeObjectURL(url);
 ```
+
+## Export the grid as a CSV report
+
+With [`withGrid`](/docs/concepts/grid-columns) (`@fluxgantt/core/grid`, experimental),
+`exportGridCsv()` returns what the grid shows as CSV: the configured column headers, then one row
+per task in tree order (collapsed rows included). It needs no DOM and no mount, and `withIo` is
+not required:
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+import { withGrid } from '@fluxgantt/core/grid';
+
+const gantt = withGrid(createGantt({ tasks }), {
+  columns: [{ id: 'name' }, { id: 'start' }, { id: 'end' }, { id: 'progress' }],
+});
+const report = gantt.exportGridCsv();
+```
+
+Dates are `YYYY-MM-DD` in the calendar's time zone, durations a plain number in the column's unit,
+progress an integer percent, and custom columns their raw `value()`. Every header and cell is
+formula-escaped and RFC 4180 quoted. It is **one-way**: unlike `exportCsv()`, the result is a
+report for a spreadsheet, not something `importCsv()` reads back.
 
 ## Import JSON / CSV
 
@@ -132,6 +158,7 @@ try {
 
 Anything you render came from data provided by someone — treat `notes`, `meta`, and `color` as
 untrusted. FluxGantt's renderer uses safe DOM APIs (never string-interpolated markup) and
-whitelist-validates `color`; CSV export escapes cells to prevent spreadsheet formula injection.
+whitelist-validates `color`; CSV export (`exportCsv()` and the grid's `exportGridCsv()`) escapes
+cells to prevent spreadsheet formula injection.
 You get these protections by using the library's own import/export paths rather than
 hand-rolling them.

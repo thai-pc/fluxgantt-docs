@@ -78,11 +78,16 @@ yourself, so the events and undo behaviour are identical either way.
 - **<kbd>↑</kbd>/<kbd>↓</kbd> scroll vertically only**, so stepping through rows never moves the
   timeline sideways. <kbd>g</kbd> is the explicit "go to bar". In the SVG renderer the row label sits
   in the pinned label column, so the focused row stays visible even when its bar is off-screen.
+  The focused row also gets a **row focus frame** across the chart and the pinned column (SVG and
+  Canvas), so focus stays visible when the bar is scrolled away or under the column. Its colour is
+  `--fg-task-focus` (`#0369a1`, dark `#38bdf8`), `Highlight` under forced colours in SVG; it needs
+  CSS `:has()`. See [Theming](/docs/theming#focus-indicator).
 - **<kbd>PageUp</kbd>/<kbd>PageDown</kbd> assume the chart's own scroll container.** They page by the
   container's height, so give the container a fixed height with `overflow: auto`; in an auto-height
   container that the page scrolls instead, a "page" is the whole chart.
-- <kbd>Home</kbd>/<kbd>End</kbd> always mean first/last **row**. Cell-level Home/End is not offered
-  because the grid has no cells.
+- <kbd>Home</kbd>/<kbd>End</kbd> always mean first/last **row**. Cell-level Home/End is not offered,
+  even with [grid columns](/docs/concepts/grid-columns) composed: the grid adds no cell-level
+  keyboard navigation yet, and every key above behaves the same with or without it.
 
 Two things worth knowing before you bind your own handlers on top:
 

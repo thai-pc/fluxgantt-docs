@@ -1,0 +1,233 @@
+# Grid columns
+
+:::warning
+**Experimental.** `withGrid` and everything exported from `@fluxgantt/core/grid` are **experimental** (`@beta`): they
+may change in any minor release, with a `Beta:` line in the changelog (see
+[Stability](/docs/stability)). Grid columns are part of the MIT core, not Pro.
+:::
+
+By default the pinned column on the left of the chart shows one thing: the task name, with the
+hierarchy toggle. `withGrid()` turns that column into a small table: the task tree plus start,
+end, duration, progress, or columns you define yourself.
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+import { withRender } from '@fluxgantt/core/render';
+import { withInteraction } from '@fluxgantt/core/interaction';
+import { withGrid } from '@fluxgantt/core/grid';
+
+const gantt = withGrid(withInteraction(withRender(createGantt({ tasks, dependencies }))));
+gantt.mount(document.getElementById('chart')!);
+```
+
+Like every capability it is an opt-in mixin on its own subpath (available since `@fluxgantt/core`
+0.9.0), so a chart without it downloads none of it. Apply it **once, before the first `mount()`**;
+applying it a second time to the same instance throws.
+
+## The model
+
+- The grid **is** the pinned label column. It stays pinned to the inline-start edge on horizontal
+  scroll, exactly as the label column did, and its width is the sum of the column widths. Scrolling,
+  `scrollToTask()`, zoom anchoring, RTL and PNG export all key on that one width, so they keep
+  working unchanged.
+- **`name` is always the first column.** It holds the tree (indentation and the collapse toggle).
+  If you leave it out of `columns` it is prepended; if you include it anywhere but first,
+  `withGrid` throws.
+- A **header row** is added above the rows, in the pinned date band.
+- Values are computed **once per task per data revision**, not per paint, so scrolling and zooming
+  format nothing.
+
+```ts
+withGrid(instance, {
+  columns: [{ id: 'name' }, { id: 'start' }, { id: 'duration' }], // default: all five built-ins
+  collapseBelow: 480,  // default 480 (CSS px); 0 disables
+  durationUnit: 'days', // default 'days'; or 'hours'
+});
+```
+
+`withGrid` returns the same instance with three methods added:
+
+| Method | Returns | Purpose |
+|---|---|---|
+| `getGridColumns()` | `readonly GridColumn[]` | The resolved columns in display order (a new array each call), whether or not `collapseBelow` currently hides all but `name`. |
+| `setGridColumns(columns)` | `void` | Replaces the columns with one repaint. Throws a `RangeError` on invalid input and then changes nothing. |
+| `exportGridCsv()` | `string` | A CSV report of what the grid shows. Works without a DOM. See [CSV export](#csv-export). |
+
+## Column reference
+
+Built-in columns:
+
+| `id` | Header | Default width | Align | Shows |
+|---|---|---|---|---|
+| `name` | Name | 220 | `start` | The task name and tree. Always first. |
+| `start` | Start | 120 | `start` | The start date (a summary's rolled-up start), formatted with `Intl` in `locale` and the calendar's time zone. |
+| `end` | End | 120 | `start` | The end date, likewise. |
+| `duration` | Duration | 96 | `end` | Working time in `durationUnit` (days of the calendar's working hours, or hours). An authored `task.duration`, or a summary's rolled-up duration, wins over the dates, as the critical path reads it. |
+| `progress` | Progress | 96 | `end` | Progress as a whole percent. |
+
+Options every column accepts (`GridColumnBase`):
+
+| Option | Type | Default | Notes |
+|---|---|---|---|
+| `header` | `string` | built-ins: the English header above | At most 200 characters. Required on a custom column. |
+| `width` | `number` | built-ins: table above; custom: 120 | px, clamped to `[minWidth, maxWidth]`. |
+| `minWidth` | `number` | 48 | |
+| `maxWidth` | `number` | 600 | |
+| `align` | `'start' \| 'center' \| 'end'` | `'start'` (`duration`, `progress`: `'end'`) | Logical, never left/right, so it follows [RTL](/docs/rtl). |
+
+`DEFAULT_GRID_COLUMNS` is the default list (`name`, `start`, `end`, `duration`, `progress`) and
+`MAX_COLUMN_COUNT` is the cap (24, `name` included), both exported from `@fluxgantt/core/grid`.
+`toColumnId(id)` brands a string as a `ColumnId` and throws unless it matches
+`^[A-Za-z0-9_-]{1,64}$`.
+
+Column definitions are validated up front: a bad or duplicate id, a custom column that reuses a
+built-in id, a missing `value` function, a non-finite width, an unknown alignment, an over-long
+header or more than 24 columns throws a `RangeError`, and nothing changes.
+
+## A custom column
+
+A custom column has an `id`, a `header` and a `value(task, ctx)` function, and optionally
+`format(value, task, ctx)` to turn the value into display text (default `String(value)`):
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+import { withRender } from '@fluxgantt/core/render';
+import { withGrid, DEFAULT_GRID_COLUMNS } from '@fluxgantt/core/grid';
+
+const gantt = withGrid(withRender(createGantt({ tasks, locale: 'de' })), {
+  columns: [
+    ...DEFAULT_GRID_COLUMNS,
+    {
+      id: 'owner',
+      header: 'Owner',
+      width: 140,
+      value: (task) => (typeof task.meta?.owner === 'string' ? task.meta.owner : undefined),
+    },
+    {
+      id: 'budget',
+      header: 'Budget',
+      align: 'end',
+      value: (task) => (typeof task.meta?.budget === 'number' ? task.meta.budget : undefined),
+      format: (value, _task, ctx) =>
+        new Intl.NumberFormat(ctx.locale, { style: 'currency', currency: 'EUR' }).format(Number(value)),
+    },
+  ],
+});
+```
+
+- `ctx` is a `GridCellContext`: `{ locale, calendar, isSummary }`.
+- `value()` may return a string or a finite number. `null`, `undefined`, a non-finite number or
+  any other type renders a blank cell.
+- Cell text is **untrusted**: it is capped at 1000 characters, written as text only (never as
+  markup), and an exception thrown by `value()` or `format()` is contained (that cell is blank, and
+  a warning is logged).
+- Both functions run once per task per data revision. Keep them pure: they are not re-run on
+  scroll, zoom or collapse.
+
+To change the columns later (a column picker, say), pass the new list to `setGridColumns()`; the
+chart repaints once.
+
+```ts
+gantt.setGridColumns([{ id: 'name' }, { id: 'end', header: 'Due' }]);
+gantt.getGridColumns().map((c) => c.id); // ['name', 'end']
+```
+
+## CSV export
+
+`exportGridCsv()` returns a report of the configured columns: one row per task in tree order
+(collapsed rows included), with a header row.
+
+```ts
+const csv = gantt.exportGridCsv();
+```
+
+- Built-in dates are `YYYY-MM-DD` in the calendar's time zone, the duration is a plain number in
+  the column's unit, progress is an integer percent, and custom columns export the raw `value()`
+  (not the `format()` output).
+- Every header and cell is **formula-escaped** (a cell starting with `=`, `+`, `-`, `@`, tab or CR
+  cannot run as a spreadsheet formula) and RFC 4180 quoted.
+- It is **one-way**: it is a report, not importable. To round-trip data use `exportCsv()` /
+  `importCsv()` from [`withIo`](/docs/import-export).
+- It needs no DOM and no mount, and it always reports every configured column, even while
+  `collapseBelow` hides them on screen.
+
+The chart exports (`exportSvg()`, `exportPng()` from `withIo`) include the grid, in both
+renderers. See [Import & Export](/docs/import-export).
+
+## Narrow containers: `collapseBelow`
+
+While the chart's container is narrower than `collapseBelow` CSS px (default **480**), only the
+`name` column is shown, so a phone-width layout keeps most of its width for the timeline. The
+other columns come back once the container is 16 px wider than the threshold (the hysteresis stops
+a container right at the edge from flickering). The decision is made from the container's width
+at mount, then on resize, and the repaint happens on the next animation frame.
+
+- `collapseBelow: 0` disables it.
+- It needs `ResizeObserver`; without one, every column stays.
+- Collapsed columns are hidden from assistive technology too, not only visually.
+- A container that shrinks to fit its content may not re-expand once collapsed: give the chart
+  container a width from its layout.
+
+`collapseBelow` is about the container width, not the pointer type, so it is independent of
+[`withResponsive`](/docs/responsive). When both are composed the grid owns the pinned column's
+width and `withResponsive` stops narrowing it (see
+[Responsive & touch](/docs/responsive#with-grid-columns)).
+
+## Long text
+
+Text that does not fit its column is cut with an ellipsis. The **full** text stays in the
+accessible name and in a `<title>` (a tooltip in the SVG renderer), and the Canvas accessibility
+layer always holds the full text. The cut point comes from a width estimate, not from measuring
+the rendered text, so a cell reads the same in both renderers and in every export. For that
+estimate to hold, the chart's text is set to 12px `system-ui` while the grid is composed; a host
+CSS rule that changes the row labels' font can make text spill into the next column.
+
+## SVG and Canvas
+
+The grid paints in both renderers.
+
+- **SVG** (up to 2,000 tasks): the grid is part of the pinned column layer. The first mount paints
+  twice, once at the default label width and then at the grid's.
+- **Canvas** (above 2,000 tasks): the grid is painted on the pinned label canvas (the header band
+  in its corner, the cells and the column dividers). The Canvas painter is a **separate lazy
+  chunk** (about 1.4 KiB gzip) fetched on the first Canvas mount, so **the first Canvas paint may
+  show the plain label column for a moment** until it arrives. A Canvas `exportSvg()` made before
+  then has no grid; wait for the grid to appear, or export from an explicit user action.
+- In both modes a click on a cell selects the row exactly like a click on its label, and Canvas
+  `hitTestRow` results report the `columnId` under a pointer in the pinned zone.
+
+## Right-to-left
+
+With [`withRtl`](/docs/rtl) and `rtl: true` the grid sits at the **right** edge, the column order
+is mirrored (`name` is the rightmost column) and each cell's logical `align` follows, in both
+renderers and in the exports.
+
+## Accessibility
+
+- With the grid composed, the chart is a real treegrid: `aria-colcount`, a `columnheader` row,
+  and `gridcell`s with `aria-colindex` on every row. The header row is `aria-rowindex` 1, so data
+  rows start at 2 (`aria-rowcount` includes the header). The pinned visual layers stay
+  `aria-hidden` clones.
+- The same structure is in the hidden accessibility layer of the Canvas renderer: data rows sit at
+  `aria-rowindex` = row index + 2 and each cell carries `data-column-id`. The name cell keeps no
+  `aria-label` of its own, so the bar's accessible name (dates, progress, "critical path",
+  "selected") is never replaced, even when the painted name is cut.
+- A header's accessible name defaults to its header text; supply
+  [`messages.gridColumnLabel`](/docs/i18n#grid-column-headers) to change it.
+- **Keyboard behaviour is unchanged.** Rows are navigated exactly as without the grid
+  ([keyboard shortcuts](/docs/interactions/drag#keyboard-shortcuts)); there is no cell-level
+  keyboard navigation yet.
+
+## Limits
+
+- At most **24 columns** (`MAX_COLUMN_COUNT`), headers up to 200 characters, cell text up to 1000.
+- Column widths are set in code; there is no drag-to-resize yet.
+- Cells are read-only: there is no inline editing, sorting or reordering. Build an editor on
+  [`task:activated`](/docs/api#edit-hooks) if you need one.
+- No cell-level keyboard navigation yet. Column resizing, cell keyboard navigation and inline
+  editing are planned.
+- The React and Vue wrappers do not compose `withGrid` yet.
+- With `config.rollup` set, the rollup provider runs twice per data revision (once for the
+  renderer, once for the grid's summary rows).
+- `MAX_GRID_COLUMNS` in `@fluxgantt/core/render` is unrelated (it caps the timeline's **date**
+  columns) and is deprecated.

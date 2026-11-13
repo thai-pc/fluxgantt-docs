@@ -57,6 +57,10 @@ A runnable page with Arabic data (and Hebrew via `?lang=he`) lives in
   goes **negative** toward later dates. FluxGantt's own zoom anchor, `scrollToTask()` and
   `scrollToDate()` already account for that. If your code reads or writes the container's
   `scrollLeft` yourself, use `-scrollLeft` as the distance from the start edge.
+- **Grid columns.** With [`withGrid`](/docs/concepts/grid-columns) the whole grid sits at the right
+  edge: the column order is mirrored (`name`, with the tree, is the rightmost column) and each
+  cell's logical `align` (`'start'` / `'end'`) follows, in SVG, in Canvas mode and in the exports.
+  Compose order does not matter; `withRtl` always mirrors last, so the grid is included.
 - **Accessibility.** The ARIA grid, row and gridcell order are unchanged (they follow the DOM, which is
   not mirrored), the critical path is still a dashed outline and the focus ring still follows the
   focused bar.
@@ -71,8 +75,8 @@ Core ships English only, and `rtl` does not change that. Date labels follow `loc
 
 - **Construction-time only.** Like `locale`, `rtl` is read once. To switch at runtime, destroy and
   rebuild the instance (in React or Vue change the `key`).
-- **The label column moves with the timeline.** It is one mirrored unit; it cannot sit on the opposite
-  side of the chart direction.
+- **The label column (or grid) moves with the timeline.** It is one mirrored unit; it cannot sit on
+  the opposite side of the chart direction.
 - **No start-edge resize**, as in left-to-right charts.
 - **Browsers.** The negative-`scrollLeft` model is the evergreen standard (Chrome 85+, Firefox, Safari
   14+). The mirrored text placement was verified in Chromium, Firefox, WebKit and Safari 26. Older

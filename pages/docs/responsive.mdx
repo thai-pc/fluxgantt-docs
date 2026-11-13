@@ -151,6 +151,26 @@ Custom-property resolution takes the **nearest** declaration, not the most speci
 the mixin declares the token on `.fg-timeline` itself. A rule on your mount container is one
 level further out and never applies.
 
+## With grid columns
+
+[`withGrid`](/docs/concepts/grid-columns) makes the pinned column a grid whose width is the sum of
+its column widths, so the grid **owns** that width. When both mixins are composed, the grid marks
+the renderer's handle with `fixedLabelWidth` (an experimental seam on `InteractiveRendererHandle`)
+and `withResponsive` stops writing `labelColumnWidth`: the 40% clamp above does not apply, and
+`getLabelColumnWidth()` reports the width the grid painted. Everything else (touch density, hit
+targets, panning, pinch zoom) still adapts.
+
+For narrow screens the grid has its own switch, `collapseBelow` (default **480** CSS px): while
+the container is narrower than that, only the `name` column is shown. Unlike everything above it
+is keyed on the **container width**, not on a coarse pointer, so it also applies to a narrow
+desktop window:
+
+```ts
+import { withGrid } from '@fluxgantt/core/grid';
+
+withGrid(gantt, { collapseBelow: 600 }); // 0 disables
+```
+
 ## Without the mixin
 
 Nothing about the default chart changes — same 160px column, same 32px rows, same 8px edges. If
@@ -164,4 +184,4 @@ gesture layer.
   continuously.
 - **A stacked mobile layout** (labels above bars, no label column) — a layout redesign, not a
   responsive pass.
-- **RTL geometry** — declared but not implemented, unchanged by this.
+- **RTL** — handled by its own mixin, [`withRtl`](/docs/rtl), which composes with this one.
