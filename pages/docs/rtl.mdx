@@ -84,5 +84,12 @@ Core ships English only, and `rtl` does not change that. Date labels follow `loc
 - **Exported SVG.** The file carries its own transform and `direction` attributes and needs no CSS,
   and browsers render it as the live chart. Some non-browser SVG viewers (Inkscape, resvg) ignore the
   SVG `direction` property and may place the label text differently.
-- **Keyboard.** Arrow Left and Right are reserved; when horizontal navigation is added it will be
-  logical (toward the start / end of the row), not physical.
+- **Keyboard.** Every horizontal key is **logical**, not physical: under `rtl: true` the physical
+  Left and Right keys swap meaning, so the key that points toward the chart's start edge (Right in
+  RTL) always means "toward the start". That covers the task keys (<kbd>Alt</kbd>+<kbd>←</kbd>
+  moves a task **later** in RTL, see [Keyboard alternative to dragging](/docs/interactions/drag#keyboard-alternative-to-dragging))
+  and, with [`withGrid`](/docs/concepts/grid-columns), the
+  [grid keyboard](/docs/interactions/grid-keyboard#right-to-left): expand / collapse and
+  cell-to-cell moves, header-to-header moves, and column resizing, where "toward the chart grows",
+  so <kbd>Alt</kbd>+<kbd>←</kbd> widens the focused column in RTL. Dragging a header divider
+  follows the same rule. Without `withGrid`, bare Left and Right do nothing on a row.

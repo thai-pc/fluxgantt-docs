@@ -42,15 +42,17 @@ withGrid(instance, {
   columns: [{ id: 'name' }, { id: 'start' }, { id: 'duration' }], // default: all five built-ins
   collapseBelow: 480,  // default 480 (CSS px); 0 disables
   durationUnit: 'days', // default 'days'; or 'hours'
+  resizable: true,      // default true; false freezes the widths
 });
 ```
 
-`withGrid` returns the same instance with three methods added:
+`withGrid` returns the same instance with four methods added:
 
 | Method | Returns | Purpose |
 |---|---|---|
 | `getGridColumns()` | `readonly GridColumn[]` | The resolved columns in display order (a new array each call), whether or not `collapseBelow` currently hides all but `name`. |
 | `setGridColumns(columns)` | `void` | Replaces the columns with one repaint. Throws a `RangeError` on invalid input and then changes nothing. |
+| `resizeGridColumn(id, width)` | `boolean` | Sets one column's width (since 0.10.0). See [Resizing columns](#resizing-columns). |
 | `exportGridCsv()` | `string` | A CSV report of what the grid shows. Works without a DOM. See [CSV export](#csv-export). |
 
 ## Column reference
@@ -154,6 +156,135 @@ const csv = gantt.exportGridCsv();
 The chart exports (`exportSvg()`, `exportPng()` from `withIo`) include the grid, in both
 renderers. See [Import & Export](/docs/import-export).
 
+## Resizing columns
+
+Since core 0.10.0 a user can resize columns with the pointer or the keyboard, and your code can
+resize them with `resizeGridColumn()`. All of it is experimental (`@beta`).
+
+### From code: `resizeGridColumn()`
+
+```ts
+gantt.resizeGridColumn('start', 160); // true: the width changed
+gantt.resizeGridColumn('nope', 160);  // false: unknown id
+```
+
+- The width is rounded and **clamped** to the column's `[minWidth, maxWidth]`, and applied with one
+  repaint and one `column:resized` event.
+- It returns `true` when the width changed, and `false` for an unknown id, a non-finite width, a
+  width that is already the current one (after clamping), or when `resizable` is `false`.
+- It works headless (no mount needed) and is **not gated by `readOnly`**: widths are view state,
+  not data.
+
+### `resizable`
+
+`GridOptions.resizable` defaults to `true`. With `resizable: false` the widths are frozen: there
+are no drag handles, <kbd>Alt</kbd>+Arrow on a column header does nothing and `resizeGridColumn()`
+returns `false`. Keyboard navigation of the headers and cells is **not** affected; the headers stay
+focusable and navigable. A single column can be made fixed by giving it the same `minWidth` and
+`maxWidth`: it has no drag handle.
+
+### Pointer
+
+Drag the divider at the inline-end edge of a column header (an 8 px hot zone, **16 px on a coarse
+pointer**). A guide line follows the pointer and the width commits once, on release;
+<kbd>Escape</kbd> cancels the drag. A repaint during the drag does not disturb it, and the gesture
+never reaches selection, task drag or edit hooks. The drag grows "toward the chart", so it flips
+under [RTL](/docs/rtl). It works in both renderers (on Canvas the drag starts from the header band
+of the pinned label canvas; the resize cursor shows when `withInteraction` is composed). Pointer
+drags are not announced.
+
+### Keyboard
+
+<kbd>↑</kbd> on the first row enters the column headers; <kbd>←</kbd>/<kbd>→</kbd>/<kbd>Home</kbd>/<kbd>End</kbd>
+move between them; <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> resizes the focused column by 16 px
+(<kbd>Alt</kbd>+<kbd>Shift</kbd>: 2 px), where the key pointing toward the chart grows it;
+<kbd>↓</kbd> or <kbd>Escape</kbd> goes back to the rows. Each keyboard resize is announced through
+the polite live region when `withInteraction` is composed; a host
+[`messages.announce`](/docs/i18n#live-region-announcements) receives the kind `column-resized` and
+should keep a `default` branch for kinds it does not know. Full key tables:
+[Grid keyboard](/docs/interactions/grid-keyboard#header-mode).
+
+The drag handles and the header key actions are a **lazy chunk** fetched on first use, so the very
+first key may act a moment late. It is never lost.
+
+### The `column:resized` event
+
+Every committed resize, from the pointer, the keyboard or `resizeGridColumn()`, emits
+`column:resized` once with a `ColumnResizedPayload`:
+
+```ts
+gantt.on('column:resized', ({ columnId, width, widths }) => {
+  // columnId: the resized column; width: its new px width
+  // widths: every configured column id -> its px width
+});
+```
+
+### Persisting widths
+
+**The library never persists widths.** Save them from the event and feed them back through each
+column's `width` the next time you create the chart:
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+import { withRender } from '@fluxgantt/core/render';
+import { withInteraction } from '@fluxgantt/core/interaction';
+import { withGrid, DEFAULT_GRID_COLUMNS } from '@fluxgantt/core/grid';
+
+const KEY = 'my-app:gantt-column-widths';
+
+function loadWidths(): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
+  } catch {
+    return {}; // storage blocked or corrupt: fall back to the defaults
+  }
+}
+
+const saved = loadWidths();
+const columns = DEFAULT_GRID_COLUMNS.map((c) => {
+  const width = saved[c.id];
+  return typeof width === 'number' && Number.isFinite(width) ? { ...c, width } : c;
+});
+
+const gantt = withGrid(withInteraction(withRender(createGantt({ tasks }))), { columns });
+gantt.on('column:resized', ({ widths }) => {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(widths));
+  } catch {
+    // storage full or blocked: widths simply are not remembered
+  }
+});
+gantt.mount(document.getElementById('chart')!);
+```
+
+Stored widths are untrusted input like any other: a non-finite value is skipped above, and the
+grid clamps every `width` to the column's `[minWidth, maxWidth]` anyway.
+
+### Resize limits
+
+- The sum of the widths is **not bounded** by the container, so the grid can be widened until it
+  covers the timeline (drag or <kbd>Alt</kbd>+<kbd>←</kbd> back).
+- The drag's guide line is `position: fixed`, so inside a host ancestor with `transform`, `filter`
+  or `contain: paint` it is drawn offset. The committed width is unaffected.
+- Accessibility: the keyboard path meets WCAG 2.1.1 (Keyboard). WCAG 2.2 SC 2.5.7 (Dragging
+  Movements) asks for a **single-pointer** alternative to dragging, which the keyboard path does not
+  provide: if you need it, wire a control of your own (a column menu with "Wider" and "Narrower",
+  say) to `resizeGridColumn()`.
+
+## Keyboard navigation
+
+Since core 0.10.0 the grid follows the APG treegrid pattern. The chart stays one Tab stop (the
+active row). From a row, <kbd>→</kbd> expands a collapsed parent or enters the row's first cell, and
+<kbd>←</kbd> collapses an expanded parent or moves to the parent row. In **cell mode**,
+<kbd>←</kbd>/<kbd>→</kbd>/<kbd>Home</kbd>/<kbd>End</kbd> move between the cells of the row,
+<kbd>↑</kbd>/<kbd>↓</kbd>/<kbd>PageUp</kbd>/<kbd>PageDown</kbd> move between rows and keep the
+column, and <kbd>Escape</kbd> (or <kbd>←</kbd> from the first cell) returns to the row. Under RTL
+<kbd>←</kbd> and <kbd>→</kbd> swap. The task keys (<kbd>Alt</kbd>+Arrow, <kbd>Alt</kbd>+<kbd>Enter</kbd>,
+<kbd>Space</kbd>, <kbd>Delete</kbd>, <kbd>g</kbd>) keep working from a cell. Full tables, the
+deviations from APG and the keys that stay unchanged:
+[Grid keyboard](/docs/interactions/grid-keyboard).
+
 ## Narrow containers: `collapseBelow`
 
 While the chart's container is narrower than `collapseBelow` CSS px (default **480**), only the
@@ -214,18 +345,18 @@ renderers and in the exports.
   "selected") is never replaced, even when the painted name is cut.
 - A header's accessible name defaults to its header text; supply
   [`messages.gridColumnLabel`](/docs/i18n#grid-column-headers) to change it.
-- **Keyboard behaviour is unchanged.** Rows are navigated exactly as without the grid
-  ([keyboard shortcuts](/docs/interactions/drag#keyboard-shortcuts)); there is no cell-level
-  keyboard navigation yet.
+- **Keyboard:** rows, cells and column headers are reachable from the keyboard as an APG treegrid,
+  with one Tab stop for the chart ([Grid keyboard](/docs/interactions/grid-keyboard)). A focused
+  cell shows a 2 px ring next to the row's focus frame (`Highlight` in forced colors on SVG).
 
 ## Limits
 
 - At most **24 columns** (`MAX_COLUMN_COUNT`), headers up to 200 characters, cell text up to 1000.
-- Column widths are set in code; there is no drag-to-resize yet.
+- Column widths are not persisted by the library ([recipe](#persisting-widths)), and their sum is
+  not bounded by the container.
 - Cells are read-only: there is no inline editing, sorting or reordering. Build an editor on
   [`task:activated`](/docs/api#edit-hooks) if you need one.
-- No cell-level keyboard navigation yet. Column resizing, cell keyboard navigation and inline
-  editing are planned.
+- Inline cell editing is planned (<kbd>Enter</kbd> and <kbd>F2</kbd> are reserved for it).
 - The React and Vue wrappers do not compose `withGrid` yet.
 - With `config.rollup` set, the rollup provider runs twice per data revision (once for the
   renderer, once for the grid's summary rows).

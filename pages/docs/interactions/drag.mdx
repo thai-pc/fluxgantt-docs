@@ -85,9 +85,12 @@ yourself, so the events and undo behaviour are identical either way.
 - **<kbd>PageUp</kbd>/<kbd>PageDown</kbd> assume the chart's own scroll container.** They page by the
   container's height, so give the container a fixed height with `overflow: auto`; in an auto-height
   container that the page scrolls instead, a "page" is the whole chart.
-- <kbd>Home</kbd>/<kbd>End</kbd> always mean first/last **row**. Cell-level Home/End is not offered,
-  even with [grid columns](/docs/concepts/grid-columns) composed: the grid adds no cell-level
-  keyboard navigation yet, and every key above behaves the same with or without it.
+- <kbd>Home</kbd>/<kbd>End</kbd> mean first/last **row** while a row has focus. With
+  [grid columns](/docs/concepts/grid-columns) composed the chart also gains cell and column-header
+  modes (where <kbd>Home</kbd>/<kbd>End</kbd> mean first/last cell or header), and bare
+  <kbd>←</kbd>/<kbd>→</kbd> and <kbd>Ctrl/Cmd</kbd>+<kbd>Home</kbd>/<kbd>End</kbd> get
+  treegrid meanings on rows. See [Grid keyboard](/docs/interactions/grid-keyboard). Without
+  `withGrid`, every key in this table behaves exactly as described here.
 
 Two things worth knowing before you bind your own handlers on top:
 
@@ -110,7 +113,10 @@ collapse and zoom all keep working, because none of them mutate data.
 
 ## Keyboard alternative to dragging
 
-Every drag gesture has a keyboard equivalent (WCAG 2.2 SC 2.5.7, Dragging Movements). They act on
+Every drag gesture has a keyboard equivalent (WCAG 2.1.1, Keyboard). These keys are not the
+single-pointer alternative that WCAG 2.2 SC 2.5.7 (Dragging Movements) asks for: a host that needs
+one wires a control of its own (a "move one day later" button, a date field) to `moveTask()` /
+`resizeTask()`. The keys act on
 the **focused row only**, even if several rows are selected (drag moves one bar too), go through the
 same commit path as the pointer (same events, same cascade, same undo), and are inert under
 `readOnly` (`enableDependencyDrag: false` also turns off linking).
@@ -130,6 +136,9 @@ same commit path as the pointer (same events, same cascade, same undo), and are 
   written and the live region says "cannot resize" / "cannot move".
 - Left/right are **logical** on the time axis: in an [RTL chart](/docs/rtl) later dates are visually
   on the left, so <kbd>Alt</kbd>+<kbd>←</kbd> moves the task later there.
+- With [grid columns](/docs/concepts/grid-columns) composed these keys work the same from a focused
+  grid cell (they act on that cell's row). On a focused **column header**, <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd>
+  resizes the column instead; see [Grid keyboard](/docs/interactions/grid-keyboard#header-mode).
 - Only the end edge is resizable, exactly like dragging (the start edge never moves).
 - Rolled-up summary bars (when `rollup` is configured) and milestone resizes are declined, as in drag.
 - The bar is scrolled back into view after a move or resize (needs `withViewport`, as for <kbd>g</kbd>).
