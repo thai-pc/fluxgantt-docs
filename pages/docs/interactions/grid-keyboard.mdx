@@ -1,0 +1,181 @@
+# Grid keyboard
+
+:::warning
+**Experimental.** Grid keyboard navigation comes with [`withGrid`](/docs/concepts/grid-columns)
+(`@fluxgantt/core/grid`, `@beta`, since core 0.10.0) and may change in any minor release, with a
+`Beta:` line in the changelog (see [Stability](/docs/stability)).
+:::
+
+With grid columns composed, the chart follows the
+[WAI-ARIA APG treegrid pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treegrid/): besides moving
+between rows, a keyboard user can expand and collapse from the row, step into the cells of a row,
+and reach the column headers to resize a column. It works the same in the SVG and the Canvas
+renderer.
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+import { withRender } from '@fluxgantt/core/render';
+import { withInteraction } from '@fluxgantt/core/interaction';
+import { withGrid } from '@fluxgantt/core/grid';
+
+const gantt = withGrid(withInteraction(withRender(createGantt({ tasks }))));
+gantt.mount(document.getElementById('chart')!);
+```
+
+Row navigation itself (<kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>Home</kbd>/<kbd>End</kbd>,
+<kbd>PageUp</kbd>/<kbd>PageDown</kbd>, selection) comes from `withInteraction`, so compose both for
+the full model below.
+
+:::info
+**Without `withGrid`, nothing changes.** The grid's key handling is installed only by `withGrid`.
+A chart without it keeps exactly the [keyboard shortcuts](/docs/interactions/drag#keyboard-shortcuts)
+it had: bare <kbd>←</kbd>/<kbd>→</kbd> and <kbd>Ctrl/Cmd</kbd>+<kbd>Home</kbd>/<kbd>End</kbd> stay
+unbound and are not prevented.
+:::
+
+## One Tab stop
+
+The chart is still **one Tab stop**, the active row, exactly as without the grid. Cells and column
+headers are focusable from script only (`tabindex="-1"`), and you reach them with the arrow keys.
+<kbd>Tab</kbd> or <kbd>Shift</kbd>+<kbd>Tab</kbd> from a cell or a header first puts focus back on
+the active row and then lets the browser move on, so the chart is one stop in both directions.
+
+There are three modes, decided by what has focus:
+
+- **Row mode**: a row has focus (where <kbd>Tab</kbd> lands).
+- **Cell mode**: a cell of the focused row has focus.
+- **Header mode**: a column header has focus.
+
+## Row mode
+
+Everything from the [keyboard shortcut table](/docs/interactions/drag#keyboard-shortcuts) still
+applies. The grid adds:
+
+| Keys | Action |
+|---|---|
+| <kbd>→</kbd> | On a **collapsed** parent: expand it (focus stays on the row). On an expanded parent or a leaf: focus the **first cell** (the name cell), entering cell mode |
+| <kbd>←</kbd> | On an **expanded** parent: collapse it. On a collapsed parent or a leaf: move focus to the **parent row** and select it. On a top-level row: nothing (the key is still claimed, so the container does not scroll sideways) |
+| <kbd>Ctrl/Cmd</kbd>+<kbd>Home</kbd> / <kbd>End</kbd> | Focus and select the first / last row |
+| <kbd>↑</kbd> on the first row | Focus the first column header, entering header mode |
+
+## Cell mode
+
+| Keys | Action |
+|---|---|
+| <kbd>→</kbd> / <kbd>←</kbd> | Next / previous cell of the row. Clamped at the last cell, no wrap |
+| <kbd>←</kbd> on the first cell | Back to row mode (focus the row) |
+| <kbd>Home</kbd> / <kbd>End</kbd> | First / last cell of the row |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Previous / next row, **same column**. Selection follows, as in row mode |
+| <kbd>PageUp</kbd> / <kbd>PageDown</kbd> | A page of rows up / down, same column |
+| <kbd>Ctrl/Cmd</kbd>+<kbd>Home</kbd> / <kbd>End</kbd> | First / last row, same column |
+| <kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> | Extend the selection, as in row mode; the column is kept |
+| <kbd>↑</kbd> on the first row | Focus **that column's** header, entering header mode |
+| <kbd>Escape</kbd> | Back to row mode |
+
+Moving between cells of the same row does not change the selection. A screen reader announces each
+cell with its row, its column header and its value: every cell is a real `gridcell` with
+`aria-colindex`, and the bar keeps its own accessible name.
+
+## Header mode
+
+| Keys | Action |
+|---|---|
+| <kbd>→</kbd> / <kbd>←</kbd> | Next / previous column header |
+| <kbd>Home</kbd> / <kbd>End</kbd> (also with <kbd>Ctrl/Cmd</kbd>) | First / last column header |
+| <kbd>Alt</kbd>+<kbd>→</kbd> / <kbd>←</kbd> | Resize the focused column by 16 px. The key that points **toward the chart grows** the column |
+| <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd> / <kbd>←</kbd> | Resize by 2 px |
+| <kbd>↓</kbd> | Back to the cell the header was entered from, or to the first row when it was entered from a row |
+| <kbd>Escape</kbd> | Back to the active row |
+
+- Each keyboard resize is clamped to the column's `minWidth` / `maxWidth`, emits `column:resized`
+  and is announced through the polite live region when `withInteraction` is composed (for example
+  "Start: 136 pixels wide"; translate it with [`messages.announce`](/docs/i18n#live-region-announcements),
+  kind `column-resized`). See [Resizing columns](/docs/concepts/grid-columns#resizing-columns).
+- With `GridOptions.resizable: false` the headers stay focusable and navigable; only resizing is
+  off (<kbd>Alt</kbd>+Arrow on a header is claimed and does nothing).
+- Resizing is view state, not data, so it is **not** gated by `readOnly`.
+
+## Keys that stay the same
+
+The grid claims only the keys in the tables above. Everything else reaches the chart's normal
+keyboard handling exactly as from a row, **also from a focused cell** (it acts on the cell's row):
+
+- <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> and <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd>
+  move and resize the **task**, and <kbd>Alt</kbd>+<kbd>Enter</kbd> links
+  ([keyboard alternative to dragging](/docs/interactions/drag#keyboard-alternative-to-dragging)).
+  Only on a column header does <kbd>Alt</kbd>+Arrow mean "resize the column". Moving across cells
+  is therefore plain <kbd>←</kbd>/<kbd>→</kbd> only.
+- <kbd>Space</kbd> toggles the row's selection.
+- <kbd>Delete</kbd> / <kbd>Backspace</kbd> still deletes the selected tasks. It does **not** clear
+  a cell.
+- <kbd>g</kbd> / <kbd>G</kbd> (go to bar), <kbd>Shift</kbd>+Arrow, undo / redo / duplicate / zoom.
+- <kbd>Enter</kbd> (a parent row still toggles) and <kbd>F2</kbd> (with
+  [`withEditHooks`](/docs/api#edit-hooks)) behave as before. Both are reserved for inline cell
+  editing, which is planned.
+
+The grid also ignores a key when:
+
+- it is typed into an `input`, `textarea`, `select` or `contenteditable` region inside the chart
+  (an editor of your own keeps its keys);
+- it arrives during IME composition;
+- it carries <kbd>Ctrl/Cmd</kbd> or <kbd>Shift</kbd> in a combination the grid does not own;
+- an earlier handler already called `preventDefault()` on it.
+
+## Right-to-left
+
+Under [`rtl: true`](/docs/rtl), <kbd>←</kbd> and <kbd>→</kbd> swap: the physical key order flips
+with the mirrored layout, the logical meaning does not. In an RTL chart <kbd>←</kbd> expands a
+collapsed parent or enters the first cell, <kbd>→</kbd> collapses or moves to the parent, and in
+cell and header mode <kbd>←</kbd> moves to the next cell or header (visually leftward, since `name`
+is the rightmost column). Column resizing follows the same rule, "toward the chart grows", so
+<kbd>Alt</kbd>+<kbd>←</kbd> widens the focused column in RTL. <kbd>Home</kbd> / <kbd>End</kbd>
+are logical too: first and last in reading order.
+
+## Focus indicator
+
+- The focused row keeps its **row focus frame** (see [Theming](/docs/theming#focus-indicator)).
+- A focused cell adds a 2 px **ring** inset in the cell, next to the row frame; a focused header
+  gets a 2 px frame. Both use the focus token colour.
+- In forced-colors mode the SVG cell ring and the row frame use `Highlight`. The Canvas cell ring
+  and header frame are not forced-colors aware.
+- Focus survives a repaint (a host `updateTask()`, a zoom, a selection change): the same cell or
+  header keeps focus in both renderers.
+
+## Lazy loading
+
+Which keys the grid claims is decided at once, but the actions live in a lazy chunk (shared with the
+column-resize code) fetched on first focus. The very **first key may act a moment late, but it is
+never lost**: claimed keys that arrive before the chunk has loaded are applied in order, each
+re-checked against where focus is by then. Unclaimed keys act immediately. If the chunk cannot be
+fetched, a warning is logged once, the claimed keys do nothing, and the fetch is retried on the
+next focus.
+
+## APG alignment and deviations
+
+The model follows the APG treegrid pattern: rows and cells are both focusable, Right/Left expand,
+collapse and move into and out of cells, Home/End and Ctrl+Home/End have the APG row and cell
+meanings, Up/Down keep the column, and the column headers are part of the grid. It deviates on
+purpose in these places:
+
+| Where | APG treegrid | FluxGantt | Why |
+|---|---|---|---|
+| <kbd>←</kbd> on a collapsed parent or a leaf | Focus does not move | Moves to the **parent row** and selects it | The W3C tree-view behaviour; it is the fastest way back up a deep tree |
+| Tab stop | The roving `tabindex` follows the focused cell | Stays on the row; <kbd>Tab</kbd> from a cell or header leaves via the row | One Tab stop for the whole chart, in both directions, as before the grid |
+| <kbd>Enter</kbd> / <kbd>F2</kbd> on a cell | Activate or edit the cell | Unchanged row behaviour | Reserved for inline editing (planned) |
+| <kbd>Delete</kbd> on a cell | (not specified; often "clear cell") | Deletes the selected tasks | Keeps the chart's existing shortcut |
+| <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> on a cell | (not specified) | Moves the task | The keyboard task move works from anywhere in the row |
+| <kbd>Escape</kbd> in header mode | (not specified) | Returns to the active row | |
+| Ends of a row | Wrapping is optional | No wrap; clamped | |
+
+## Known limits
+
+- On Canvas, a cell focused by assistive technology on a row other than the active row is restored
+  on the active row after the accessibility layer is rebuilt.
+- Without `withInteraction`, <kbd>←</kbd> to the parent focuses the parent row directly.
+- A host that bound its own bare <kbd>←</kbd>/<kbd>→</kbd> or <kbd>Ctrl/Cmd</kbd>+<kbd>Home</kbd>/<kbd>End</kbd>
+  on the chart sees the grid claim them first (capture phase) when `withGrid` is composed.
+  <kbd>Ctrl/Cmd</kbd>+<kbd>Home</kbd>/<kbd>End</kbd> is handed to the row navigation internally
+  and stops at the chart container, so document-level listeners never see it.
+- Accessibility: the keyboard paths meet WCAG 2.1.1 (Keyboard). They are not a single-pointer
+  alternative to dragging a column divider (WCAG 2.2 SC 2.5.7); see
+  [Resizing columns](/docs/concepts/grid-columns#resizing-columns).

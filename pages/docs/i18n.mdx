@@ -11,8 +11,9 @@ names, your own column headers) plus dates, and dates already go through `Intl`:
 createGantt({ tasks, locale: 'vi' }); // dates become "5 thg 1, 2026"
 ```
 
-That leaves exactly two strings the library itself composes, and both are accessible names —
-text a screen reader announces rather than text you see on screen.
+That leaves a handful of strings the library itself composes, and all of them are for assistive
+technology rather than text you see on screen: the chart's name, the per-task sentence, grid
+column header names and the live-region announcements.
 
 ## The chart's name
 
@@ -101,6 +102,51 @@ createGantt({
 
 It receives `{ columnId, header, index, count, locale }` (`index` is 1-based). Throwing or
 returning a non-string falls back to the header text.
+
+## Live-region announcements
+
+With [`withInteraction`](/docs/interactions/drag) composed, the chart owns a polite live region and
+announces the result of a keyboard action there: a task moved, resized or linked from the
+keyboard ([Keyboard alternative to dragging](/docs/interactions/drag#keyboard-alternative-to-dragging)),
+and, with [grid columns](/docs/concepts/grid-columns), a column resized from the keyboard. To
+translate or reword them, supply `messages.announce` (experimental, `@beta`). It receives a
+`GanttAnnouncement`, a union discriminated by `kind`, and returns the text to announce:
+
+| `kind` | When | Fields |
+|---|---|---|
+| `moved`, `resized`, `cannot-move`, `cannot-resize` | <kbd>Alt</kbd>+Arrow / <kbd>Alt</kbd>+<kbd>Shift</kbd>+Arrow on a task row | `id`, `name`, `start`, `end`, `startLabel`, `endLabel`, `locale` |
+| `linked`, `link-failed` | <kbd>Alt</kbd>+<kbd>Enter</kbd> | `fromId`, `toId`, `from`, `to`, `reason?` (`'duplicate'` / `'cycle'` / `'self'`), `locale` |
+| `column-resized` | <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> on a focused grid column header (since core 0.10.0) | `columnId`, `header`, `width` (the resulting width in px, unchanged at a limit), `locale` |
+
+```ts
+createGantt({
+  tasks,
+  locale: 'de',
+  messages: {
+    announce: (a) => {
+      switch (a.kind) {
+        case 'moved':
+          return `${a.name} verschoben: ${a.startLabel} bis ${a.endLabel}`;
+        case 'column-resized':
+          return `${a.header}: ${a.width} Pixel breit`;
+        // …the other kinds…
+        default:
+          return 'Geändert'; // a kind this code does not know yet
+      }
+    },
+  },
+});
+```
+
+- **Keep a `default` branch.** The union is experimental and gains kinds in minor releases
+  (`column-resized` arrived in 0.10.0). Code written before a kind existed must still return
+  something sensible for it; without a `default` it returns `undefined` at runtime, which falls back
+  to the English text.
+- Throwing, or returning a non-string, falls back to the English text (`Name: 160 pixels wide` for
+  a column).
+- Pointer drags are never announced, neither of tasks nor of column dividers. Listen to
+  `task:moved` / `task:resized` / `column:resized` if your app wants to.
+- Without `withInteraction` there is no live region, so nothing is announced.
 
 ## Construction-time only
 

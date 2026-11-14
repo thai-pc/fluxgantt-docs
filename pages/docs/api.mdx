@@ -39,7 +39,7 @@ const gantt = withIo(withInteraction(withRender(createGantt({ tasks: [/* … */]
 | `withConflicts(instance, options?)` | `@fluxgantt/core/conflicts` | `detectConflicts()` and the `conflict:detected` event. Headless. See [Schedule conflicts](#schedule-conflicts) |
 | `withEditHooks(instance, options?)` | `@fluxgantt/core/edit-hooks` | No new methods — emits `task:activated` and `task:context-requested` so your app can build its own editor and menu. See [Edit hooks](#edit-hooks) |
 | `withRtl(instance)` | `@fluxgantt/core/rtl` | No new methods — mirrors the chart for right-to-left locales when `rtl: true`; inert otherwise. See [Right-to-left charts](/docs/rtl) |
-| `withGrid(instance, options?)` | `@fluxgantt/core/grid` | **Experimental.** `getGridColumns()`, `setGridColumns()`, `exportGridCsv()` — turns the pinned label column into configurable columns (SVG and Canvas). See [Grid columns](#grid-columns) |
+| `withGrid(instance, options?)` | `@fluxgantt/core/grid` | **Experimental.** `getGridColumns()`, `setGridColumns()`, `resizeGridColumn()`, `exportGridCsv()` and the `column:resized` event — turns the pinned label column into configurable, resizable columns with treegrid keyboard navigation (SVG and Canvas). See [Grid columns](#grid-columns) |
 | `withResponsive(instance, options?)` | `@fluxgantt/core/responsive` | `isCoarsePointer()`, `getLabelColumnWidth()` — and adapts density, hit targets, the label column and touch panning under `(pointer: coarse)`. See [Responsive & touch](/docs/responsive) |
 
 Each mixin mutates and returns the SAME instance, so application order does not matter — but
@@ -441,6 +441,7 @@ const gantt = withGrid(withRender(createGantt({ tasks })), {
   columns: DEFAULT_GRID_COLUMNS, // name, start, end, duration, progress
   collapseBelow: 480,            // CSS px; 0 disables
   durationUnit: 'days',          // or 'hours'
+  resizable: true,               // default; false freezes the widths (since 0.10.0)
 });
 ```
 
@@ -448,6 +449,7 @@ const gantt = withGrid(withRender(createGantt({ tasks })), {
 |---|---|---|
 | `getGridColumns()` | `readonly GridColumn[]` | The resolved columns (`id`, `header`, `width`, `minWidth`, `maxWidth`, `align`, `builtIn`) in display order. |
 | `setGridColumns(columns)` | `void` | Replace the columns, one repaint. Throws a `RangeError` on invalid input and changes nothing. |
+| `resizeGridColumn(id, width)` | `boolean` | Since 0.10.0. Set one column's width (px, rounded, clamped to `[minWidth, maxWidth]`) with one repaint and one `column:resized` event. `false` for an unknown id, a non-finite or unchanged width, or `resizable: false`. Headless; not gated by `readOnly`. See [Resizing columns](/docs/concepts/grid-columns#resizing-columns). |
 | `exportGridCsv()` | `string` | One-way, formula-escaped CSV report of the configured columns. Headless. |
 
 | Export | Purpose |
@@ -457,10 +459,18 @@ const gantt = withGrid(withRender(createGantt({ tasks })), {
 | `MAX_COLUMN_COUNT` | `24`, the `name` column included. |
 | `toColumnId(id)` | Brand a string as a `ColumnId`; throws unless it matches `^[A-Za-z0-9_-]{1,64}$`. |
 
+`GridOptions.resizable` (default `true`, since 0.10.0): `false` removes the drag handles, makes
+<kbd>Alt</kbd>+Arrow on a header inert and makes `resizeGridColumn()` return `false`; header and
+cell keyboard navigation stay. Pointer drag on the header dividers, keyboard resizing and the
+treegrid cell navigation are described in [Grid columns](/docs/concepts/grid-columns#resizing-columns)
+and [Grid keyboard](/docs/interactions/grid-keyboard).
+
 Types: `GridOptions`, `GridCapability`, `GridColumn`, `GridColumnInput`, `GridColumnBase`,
 `BuiltInColumn`, `BuiltInColumnId`, `CustomColumn`, `GridCellContext`, `ColumnAlign`, `ColumnId`.
-`GanttMessages.gridColumnLabel` (experimental) names a column header for assistive technology
-([i18n](/docs/i18n#grid-column-headers)).
+`ColumnResizedPayload` (the [`column:resized`](#gantteventmap) payload) is exported from
+`@fluxgantt/core`. `GanttMessages.gridColumnLabel` (experimental) names a column header for
+assistive technology ([i18n](/docs/i18n#grid-column-headers)); a keyboard column resize is announced
+with the `GanttAnnouncement` kind `column-resized` ([i18n](/docs/i18n#live-region-announcements)).
 
 ### Events & lifecycle
 
@@ -493,6 +503,7 @@ Types: `GridOptions`, `GridCapability`, `GridColumn`, `GridColumnInput`, `GridCo
 | `conflict:detected` | `(conflicts: readonly Conflict[])` — only with `withConflicts`. See [Schedule conflicts](#schedule-conflicts) |
 | `task:activated` | `(payload: TaskActivatedPayload)` — only with `withEditHooks`. See [Edit hooks](#edit-hooks) |
 | `task:context-requested` | `(payload: TaskContextRequestedPayload)` — only with `withEditHooks`. See [Edit hooks](#edit-hooks) |
+| `column:resized` | `(payload: ColumnResizedPayload)` — **experimental** (`@beta`), only with `withGrid` (since 0.10.0). `{ columnId, width, widths }`: the resized column, its new px width, and every configured column id mapped to its px width. Once per committed resize (pointer release, keyboard step, `resizeGridColumn()`); a cancelled drag or a no-op emits nothing. See [Resizing columns](/docs/concepts/grid-columns#the-columnresized-event) |
 | `renderer:selected` | `(state: { renderer: 'svg' \| 'canvas'; taskCount: number; canvasFallbackReason?: 'dimension-exceeded' \| 'load-failed' \| 'construction-failed' })` |
 
 `on()` returns an `UnsubscribeFn` (`() => void`).
@@ -612,9 +623,10 @@ and paints afterwards, and this event fires once it has (or once the SVG fallbac
 `WorkingHours` · `CriticalPathResult`, `TaskSchedule`, `RollupResult` · `ViewMode`, `Density`,
 `SchedulingMode` · `Conflict`, `ConflictKind` · `GanttConfig`, `GanttInstance`, `GanttEventMap`, `GanttEventName`,
 `UnsubscribeFn` · `EventMeta`, `ViewportChangedPayload`, `RendererSelectedPayload`,
+`ColumnResizedPayload` (experimental),
 `ImportSummary` (event payloads) · `TaskField`, `TaskUpdatedPayload` (experimental; see
 [`task:updated`](#taskupdated-experimental)) · `GanttMessages` (see [i18n](/docs/i18n)) ·
-`GanttAnnouncement` (experimental, as is the `GanttMessages.announce` member that takes it) ·
+`GanttAnnouncement` (experimental, as is the `GanttMessages.announce` member that takes it; kinds `moved`, `resized`, `cannot-move`, `cannot-resize`, `linked`, `link-failed` and, since 0.10.0, `column-resized`, so keep a `default` branch, see [i18n](/docs/i18n#live-region-announcements)) ·
 `TaskHitPart` (`'bar' | 'label' | 'row' | 'cell'`; an output union, handle unknown members).
 Grid types live on `@fluxgantt/core/grid` ([Grid columns](#grid-columns)).
 
