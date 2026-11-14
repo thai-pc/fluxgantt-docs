@@ -26,11 +26,20 @@ gantt.mount(document.getElementById('gantt')!);
   read-only mode it still wires click-select and keyboard navigation, which stay available.)
 - **Link handles are not rendered.** They are an interactive affordance whose recognizer isn't
   wired in read-only mode, so showing them would be a misleading dead control.
+- **Grid cells are not editable.** With [`withGridEditing`](/docs/interactions/editing-cells)
+  composed, no editor opens, `startCellEdit()` returns `false` and `cell:edit-requested` never
+  fires. A cell that takes focus gets `aria-readonly="true"`. <kbd>Enter</kbd>, <kbd>F2</kbd> and
+  double-click then behave as without the editing mixin.
 
 ## What it does *not* change
 
 The [edit hooks](/docs/api#edit-hooks) (`task:activated`, `task:context-requested`) still fire in a
 read-only chart, since opening a detail card is not editing. Decide in your handler what to offer.
+With grid columns they report `part: 'cell'` and `columnId` on a cell, including for the gestures
+that would open an editor in an editable chart.
+
+Grid column widths are view state, not data: resizing columns (pointer, keyboard or
+`resizeGridColumn()`) keeps working in a read-only chart.
 
 
 `readOnly` governs the **rendered UI's interactivity only**. The full programmatic API still

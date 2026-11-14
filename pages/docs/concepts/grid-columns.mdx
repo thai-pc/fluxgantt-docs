@@ -76,6 +76,7 @@ Options every column accepts (`GridColumnBase`):
 | `minWidth` | `number` | 48 | |
 | `maxWidth` | `number` | 600 | |
 | `align` | `'start' \| 'center' \| 'end'` | `'start'` (`duration`, `progress`: `'end'`) | Logical, never left/right, so it follows [RTL](/docs/rtl). |
+| `editor` | `CellEditor \| false` | built-ins: their own editor; custom: none | Experimental, since 0.11.0. Read only when [`withGridEditing`](/docs/interactions/editing-cells) is composed. `false` makes a built-in column read-only; a `CellEditor` object makes a custom column editable (a built-in accepts only `false`). See [Custom editors](/docs/interactions/editing-cells#custom-editors). |
 
 `DEFAULT_GRID_COLUMNS` is the default list (`name`, `start`, `end`, `duration`, `progress`) and
 `MAX_COLUMN_COUNT` is the cap (24, `name` included), both exported from `@fluxgantt/core/grid`.
@@ -125,6 +126,8 @@ const gantt = withGrid(withRender(createGantt({ tasks, locale: 'de' })), {
   a warning is logged).
 - Both functions run once per task per data revision. Keep them pure: they are not re-run on
   scroll, zoom or collapse.
+- To make a custom column editable inline, give it an `editor` and compose `withGridEditing`
+  ([Editing cells](/docs/interactions/editing-cells#custom-editors)).
 
 To change the columns later (a column picker, say), pass the new list to `setGridColumns()`; the
 chart repaints once.
@@ -285,6 +288,23 @@ column, and <kbd>Escape</kbd> (or <kbd>←</kbd> from the first cell) returns to
 deviations from APG and the keys that stay unchanged:
 [Grid keyboard](/docs/interactions/grid-keyboard).
 
+## Editing cells
+
+With [`withGridEditing`](/docs/interactions/editing-cells) (`@fluxgantt/core/grid-editing`,
+experimental, since core 0.11.0) composed after `withGrid`, the cells become inline editors:
+<kbd>Enter</kbd> or <kbd>F2</kbd> on a focused cell, or a double-click or double-tap, opens a text,
+date or number field, and each commit is one calendar-aware store write and one undo entry.
+
+```ts
+import { withGrid } from '@fluxgantt/core/grid';
+import { withGridEditing } from '@fluxgantt/core/grid-editing';
+
+const gantt = withGridEditing(withGrid(withInteraction(withRender(createGantt({ tasks })))));
+```
+
+The editor per column, the calendar rules, validation, custom editors and the
+`cell:edit-requested` event are on the [Editing cells](/docs/interactions/editing-cells) page.
+
 ## Narrow containers: `collapseBelow`
 
 While the chart's container is narrower than `collapseBelow` CSS px (default **480**), only the
@@ -354,10 +374,13 @@ renderers and in the exports.
 - At most **24 columns** (`MAX_COLUMN_COUNT`), headers up to 200 characters, cell text up to 1000.
 - Column widths are not persisted by the library ([recipe](#persisting-widths)), and their sum is
   not bounded by the container.
-- Cells are read-only: there is no inline editing, sorting or reordering. Build an editor on
-  [`task:activated`](/docs/api#edit-hooks) if you need one.
-- Inline cell editing is planned (<kbd>Enter</kbd> and <kbd>F2</kbd> are reserved for it).
-- The React and Vue wrappers do not compose `withGrid` yet.
+- Cells are read-only with `withGrid` alone. Inline editing of the name, start, end, duration,
+  progress and custom cells is the separate opt-in mixin `withGridEditing` (since core 0.11.0):
+  see [Editing cells](/docs/interactions/editing-cells). There is no sorting or column reordering.
+- The React and Vue wrappers compose the grid through their own entries,
+  `@fluxgantt/react/grid` / `/grid-editing` and `@fluxgantt/vue/grid` / `/grid-editing` (since 0.6.0):
+  see [React](/docs/frameworks/react#grid-columns-and-cell-editing) and
+  [Vue](/docs/frameworks/vue#grid-columns-and-cell-editing).
 - With `config.rollup` set, the rollup provider runs twice per data revision (once for the
   renderer, once for the grid's summary rows).
 - `MAX_GRID_COLUMNS` in `@fluxgantt/core/render` is unrelated (it caps the timeline's **date**

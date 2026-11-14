@@ -93,7 +93,8 @@ there is no prop→store diffing.
 Two consequences:
 
 1. **Declare `tasks`/`dependencies` outside the component** (module scope, or `useMemo`/`useState`).
-   A fresh array identity every render doesn't update the chart and triggers a dev-only warning.
+   A fresh array identity every render doesn't update the chart and triggers a dev-only warning
+   (stripped from production builds, see [Production builds](#production-builds)).
    Mutate through the instance instead (see the ref below).
 2. **To change a construction-time prop** like `viewMode`, force a remount by changing `key`:
    ```tsx
@@ -137,6 +138,136 @@ function Chart() {
   return <div ref={ref} style={{ height: 420 }} />;
 }
 ```
+
+## Grid columns and cell editing
+
+:::warning
+**Experimental.** The grid entries are `@beta`, like the [core grid](/docs/concepts/grid-columns)
+they wrap (since `@fluxgantt/react` 0.6.0). They may change in any minor release.
+:::
+
+Two opt-in entries bring the grid to React. A chart that imports neither ships no grid code; the
+default `@fluxgantt/react` entry, its props and its types are unchanged.
+
+| Entry | Exports | Composes |
+|---|---|---|
+| `@fluxgantt/react/grid` | `FluxGanttGrid`, `useFluxGanttGrid` | `<FluxGantt>` + [`withGrid`](/docs/concepts/grid-columns) |
+| `@fluxgantt/react/grid-editing` | `FluxGanttGridEditing`, `useFluxGanttGridEditing` | the above + [`withGridEditing`](/docs/interactions/editing-cells), after `withGrid` (`withRtl` stays last) |
+
+Both also re-export the grid types (`GridColumnInput`, `GridOptions`, `ColumnResizedPayload`,
+`CellEditor`, and, from `/grid-editing`, `GridEditingOptions`, `CellEditRequestedPayload`, ...).
+
+```tsx
+import { useCallback } from 'react';
+import { FluxGanttGridEditing, type GridColumnInput } from '@fluxgantt/react/grid-editing';
+import type { CellEditRequestedPayload, ColumnResizedPayload } from '@fluxgantt/react/grid-editing';
+
+// The library never persists widths: read them back and pass them as `width`.
+const saved = loadWidths(); // Record<string, number>, validated
+
+// Module scope: the column functions keep a stable identity.
+const columns: GridColumnInput[] = [
+  { id: 'name', ...(saved.name ? { width: saved.name } : {}) },
+  { id: 'start' },
+  { id: 'end' },
+  {
+    id: 'owner',
+    header: 'Owner',
+    value: (task) => (typeof task.meta?.owner === 'string' ? task.meta.owner : ''),
+    ...(saved.owner ? { width: saved.owner } : {}),
+  },
+];
+
+export function Plan() {
+  const onColumnResized = useCallback(({ widths }: ColumnResizedPayload) => saveWidths(widths), []);
+  const onCellEditRequested = useCallback((e: CellEditRequestedPayload) => {
+    if (e.columnId === 'owner') {
+      e.preventDefault(); // synchronously: open YOUR editor instead of the built-in one
+      openOwnerPicker(e.taskId, e.clientX, e.clientY);
+    }
+  }, []);
+  return (
+    <FluxGanttGridEditing
+      tasks={tasks}
+      gridColumns={columns}
+      gridOptions={{ durationUnit: 'days', collapseBelow: 480 }}
+      gridEditing={{ isEditable: (task) => task.meta?.locked !== true }}
+      onColumnResized={onColumnResized}
+      onCellEditRequested={onCellEditRequested}
+      style={{ height: 420 }}
+    />
+  );
+}
+```
+
+### Props
+
+| Prop | Entry | Notes |
+|---|---|---|
+| `gridColumns` | both | `readonly GridColumnInput[]`. Read at creation; a later change is applied with `setGridColumns` (see below). Invalid columns throw a `RangeError` (at creation, wrapped in the usual "invalid initial config" error). |
+| `gridOptions` | both | `collapseBelow`, `durationUnit`, `resizable` (core's `GridOptions` without `columns`). **Construction-time only.** |
+| `onColumnResized` | both | `(payload: ColumnResizedPayload) => void`. Always follows the latest render. |
+| `gridEditing` | `/grid-editing` | `isEditable`, `beforeCommit`, `activate`, `commitOnBlur` ([options](/docs/interactions/editing-cells#composition-order)). `activate` and `commitOnBlur` are **construction-time only**. `isEditable` and `beforeCommit` follow the latest render, provided they were set on the first one, so inline arrows are fine there. |
+| `onCellEditRequested` | `/grid-editing` | `(payload: CellEditRequestedPayload) => void`. Call `payload.preventDefault()` synchronously to replace the built-in editor. Always follows the latest render. |
+
+Every `<FluxGantt>` prop and callback works as before, and the edit-hook callbacks
+(`onTaskActivated`, `onTaskContextRequested`) report `part: 'cell'` and `columnId` on grid cells.
+Changing a construction-time option (or adding `isEditable` / `beforeCommit` after the first
+render) is ignored and logs **one** dev warning; change `key` to remount.
+
+### The ref
+
+The ref is the full instance, typed `FluxGanttGridRef` / `FluxGanttGridEditingRef`. On top of
+`FluxGanttRef` it carries `getGridColumns`, `setGridColumns`, `resizeGridColumn` and
+`exportGridCsv`, and with editing `startCellEdit`, `cancelCellEdit` and `isEditingCell`:
+
+```tsx
+import { useRef } from 'react';
+import { FluxGanttGridEditing, type FluxGanttGridEditingRef } from '@fluxgantt/react/grid-editing';
+import { toTaskId } from '@fluxgantt/core';
+
+function Editable() {
+  const gantt = useRef<FluxGanttGridEditingRef>(null);
+  return (
+    <>
+      <button onClick={() => gantt.current?.startCellEdit(toTaskId('build'), 'name')}>Rename "Build"</button>
+      <button onClick={() => download(gantt.current?.exportGridCsv() ?? '')}>Export grid</button>
+      <FluxGanttGridEditing ref={gantt} tasks={tasks} gridColumns={columns} />
+    </>
+  );
+}
+```
+
+`useFluxGanttGrid(config)` and `useFluxGanttGridEditing(config)` return `{ ref, instance }`, like
+[`useFluxGantt`](#the-usefluxgantt-hook).
+
+### Column changes and widths
+
+- **Columns are compared structurally**: ids, widths, headers, bounds, alignment, and the identity
+  of the `value`, `format` and `editor` functions. When they differ, the wrapper calls
+  `setGridColumns` (one repaint, **never a remount**). Passing an equal array is a no-op.
+- **Keep the function identities stable.** Define columns at module scope, or build them with
+  `useMemo` / `useCallback`. An inline `value` arrow is a new function on every render, so the
+  columns are re-applied (and the grid repainted) on every render, an open editor is held back, and
+  one dev warning is logged per component.
+- **User-resized widths survive re-renders.** A re-apply keeps the live width of every column
+  whose declared `width` did not change, so re-passing the same columns never resets a user
+  resize. To reset widths: change the declared `width`s, call `ref.current.setGridColumns(...)`,
+  or change `key`.
+- **Persist widths yourself**: save `payload.widths` from `onColumnResized` and pass them back as
+  `width` ([recipe](/docs/concepts/grid-columns#persisting-widths)).
+- **A re-apply waits while a cell is being edited**, and happens once when the edit ends, so an
+  open editor and its text are never lost.
+
+## Production builds
+
+The dev-only warnings (`tasks` / `dependencies` changed identity, a construction-time grid option
+changed, unstable column functions) are guarded by a bare `process.env.NODE_ENV !== 'production'`
+check, which your bundler replaces (Vite and esbuild `define`, webpack `DefinePlugin`). Since
+`@fluxgantt/react` 0.6.0 a production build therefore strips them, text included, from the
+default entry as well as the grid entries. Before 0.6.0 the check was written so that a browser
+bundle evaluated it as "development" and shipped the warnings. An unbundled load without a
+`process` global logs no warnings.
 
 ## StrictMode
 

@@ -61,6 +61,10 @@ A runnable page with Arabic data (and Hebrew via `?lang=he`) lives in
   edge: the column order is mirrored (`name`, with the tree, is the rightmost column) and each
   cell's logical `align` (`'start'` / `'end'`) follows, in SVG, in Canvas mode and in the exports.
   Compose order does not matter; `withRtl` always mirrors last, so the grid is included.
+- **Cell editors.** With [`withGridEditing`](/docs/interactions/editing-cells) the inline editor
+  opens over the mirrored cell: it is placed with logical insets and its text follows the column's
+  logical `align` (a `start` column's text starts at the right), and it inherits the chart's `dir`.
+  The `clientX` / `clientY` anchor of `cell:edit-requested` is the centre of the mirrored cell.
 - **Accessibility.** The ARIA grid, row and gridcell order are unchanged (they follow the DOM, which is
   not mirrored), the critical path is still a dashed outline and the focus ring still follows the
   focused bar.

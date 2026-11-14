@@ -89,8 +89,11 @@ yourself, so the events and undo behaviour are identical either way.
   [grid columns](/docs/concepts/grid-columns) composed the chart also gains cell and column-header
   modes (where <kbd>Home</kbd>/<kbd>End</kbd> mean first/last cell or header), and bare
   <kbd>←</kbd>/<kbd>→</kbd> and <kbd>Ctrl/Cmd</kbd>+<kbd>Home</kbd>/<kbd>End</kbd> get
-  treegrid meanings on rows. See [Grid keyboard](/docs/interactions/grid-keyboard). Without
-  `withGrid`, every key in this table behaves exactly as described here.
+  treegrid meanings on rows. See [Grid keyboard](/docs/interactions/grid-keyboard). With
+  [`withGridEditing`](/docs/interactions/editing-cells) also composed, <kbd>Enter</kbd> and
+  <kbd>F2</kbd> on an editable cell (and <kbd>F2</kbd> on a row) open the inline editor instead
+  ([Enter and F2](/docs/interactions/grid-keyboard#enter-and-f2)). Without `withGrid`, every key
+  in this table behaves exactly as described here.
 
 Two things worth knowing before you bind your own handlers on top:
 

@@ -75,6 +75,7 @@ export default defineConfig({
       items: [
         { text: 'Drag & Drop', link: '/docs/interactions/drag' },
         { text: 'Grid Keyboard', link: '/docs/interactions/grid-keyboard' },
+        { text: 'Editing Cells', link: '/docs/interactions/editing-cells' },
         { text: 'Read-only Mode', link: '/docs/interactions/read-only' },
       ],
     },

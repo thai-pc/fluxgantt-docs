@@ -1,0 +1,463 @@
+# Editing cells
+
+:::warning
+**Experimental.** `withGridEditing` and everything exported from `@fluxgantt/core/grid-editing`
+are **experimental** (`@beta`, since core 0.11.0). They may change in any minor release, with a
+`Beta:` line in the changelog (see [Stability](/docs/stability)). Inline editing is part of the
+MIT core, not Pro.
+:::
+
+`withGridEditing()` turns the cells of the [grid columns](/docs/concepts/grid-columns) into inline
+editors: a user can rename a task, type a new start or end date, change the duration or set the
+progress without leaving the chart, with the mouse, the keyboard or a touch screen.
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+import { withRender } from '@fluxgantt/core/render';
+import { withInteraction } from '@fluxgantt/core/interaction';
+import { withGrid } from '@fluxgantt/core/grid';
+import { withGridEditing } from '@fluxgantt/core/grid-editing';
+
+const gantt = withGridEditing(withGrid(withInteraction(withRender(createGantt({ tasks })))));
+gantt.mount(document.getElementById('chart')!);
+
+gantt.on('task:updated', ({ taskId, changed, source }) => {
+  if (source) return; // undo / redo replay
+  save(gantt.getTask(taskId), changed); // persist the edit in your backend
+});
+```
+
+FluxGantt never persists anything itself: every committed edit is an ordinary store write, so
+the [`task:updated`](/docs/api#taskupdated-experimental) event (or `onTaskChange`) is where you
+save it.
+
+## Composition order
+
+- **`withGridEditing` goes after `withGrid`.** It extends the grid, so it throws
+  (`withGridEditing needs withGrid applied first`) when the grid is not on the instance yet.
+- Like every mixin, apply it **before the first `mount()`**.
+- `withRender` is required (the editors live in the mounted chart). `withInteraction` is strongly
+  recommended: it provides keyboard row navigation and the live region that announces the result of
+  an edit. Without it a pointer can still edit, but nothing is announced (focus returning to the cell
+  still makes a screen reader read the new value).
+- `withEditHooks` can be composed as well; see [Edit hooks and editing](#edit-hooks-and-editing).
+- `withRtl` can be applied anywhere in the chain; it always mirrors last.
+
+A typical fully editable chart:
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+import { withRender } from '@fluxgantt/core/render';
+import { withInteraction } from '@fluxgantt/core/interaction';
+import { withEditHooks } from '@fluxgantt/core/edit-hooks';
+import { withGrid } from '@fluxgantt/core/grid';
+import { withGridEditing } from '@fluxgantt/core/grid-editing';
+
+const gantt = withGridEditing(
+  withGrid(withEditHooks(withInteraction(withRender(createGantt({ tasks, dependencies }))))),
+  {
+    // every option is optional
+    isEditable: (task, columnId) => !(columnId === 'name' && task.meta?.locked === true),
+    beforeCommit: () => undefined, // return a message to block a commit
+    activate: ['enter', 'f2', 'dblclick'], // the default
+    commitOnBlur: true, // the default
+  },
+);
+```
+
+In React and Vue, use the `@fluxgantt/react/grid-editing` and `@fluxgantt/vue/grid-editing`
+entries instead of composing by hand (see [React](/docs/frameworks/react#grid-columns-and-cell-editing)
+and [Vue](/docs/frameworks/vue#grid-columns-and-cell-editing)).
+
+`withGridEditing` adds three methods:
+
+| Method | Returns | Purpose |
+|---|---|---|
+| `startCellEdit(taskId, columnId)` | `boolean` | Opens the editor on a cell, committing any editor that is already open. `false` when the cell is not editable (unknown task or column, a `readOnly` chart, a column hidden by `collapseBelow`, a rolled-up cell, `isEditable`) or the chart is not mounted. The editor code loads on first use, so the **first** call returns `true` before `cell:edit-requested` has fired; after that, a host veto or (Canvas) a row that is not on screen returns `false`. Called from inside a command (for example a listener), it opens a microtask later. |
+| `cancelCellEdit()` | `void` | Closes the open editor without writing. |
+| `isEditingCell()` | `boolean` | `true` while an editor is open. |
+
+## Which cell gets which editor
+
+| Column | Editable on | Editor | Accepts | Written with (one call) |
+|---|---|---|---|---|
+| `name` | every task, parents included | text | trimmed text, 1 to 500 characters | `updateTask(id, { name })` |
+| `start` | leaf tasks and milestones | native date field | a day from 1900 to 2200 | `updateTask(id, { start, end })` |
+| `end` | leaf tasks (not milestones) | native date field | a day from 1900 to 2200, after the start | `resizeTask(id, hours)` |
+| `duration` | leaf tasks (not milestones) | text with a numeric keyboard | a decimal number in the column's `durationUnit`, 0 to 3650 days (87600 h) | `resizeTask(id, hours)` |
+| `progress` | leaf tasks and milestones | text with a numeric keyboard | 0 to 100, an optional trailing `%`, rounded to one decimal | `setProgress(id, n / 100)` |
+| custom | only with an [`editor`](#custom-editors) | `text`, `number` or `date` | per editor type | `updateTask(id, patch)` |
+
+- A **parent** task's start, end, duration and progress are rolled up from its children, so those
+  cells are never editable. Its name is.
+- A milestone has no end and no duration of its own.
+- A built-in column opts out with `editor: false` (`{ id: 'progress', editor: false }`).
+- `isEditable(task, columnId)` can only **narrow** these rules. It is evaluated when an edit is
+  requested and when a cell takes focus.
+- The editor always edits the **full** value, even when the cell text is cut with an ellipsis.
+  Dates start as `YYYY-MM-DD`, the duration as the number shown in the cell, the progress as a percent.
+- The duration and progress fields are `type="text"` with `inputmode="decimal"`, not
+  `type="number"`, so a locale decimal comma works and there is no spinner. See
+  [Validation](#validation-and-messages).
+
+## Gestures
+
+| Gesture | Opens the editor on |
+|---|---|
+| <kbd>Enter</kbd> on a focused cell | that cell |
+| <kbd>F2</kbd> on a focused cell | that cell |
+| <kbd>F2</kbd> on a focused row | the row's `name` cell |
+| Double-click on a pinned cell | that cell |
+| Double-tap on a pinned cell (touch) | that cell |
+
+Restrict them with `activate` (for example `activate: ['f2']`). A key with <kbd>Ctrl</kbd>,
+<kbd>Cmd</kbd>, <kbd>Alt</kbd> or <kbd>Shift</kbd>, a key during IME composition, a key typed in an
+`input` / `textarea` / `select` / `contenteditable` inside the chart, or a key an earlier handler
+already prevented is never claimed. <kbd>Enter</kbd> on a **row** (not a cell) is not an edit
+gesture: it toggles a parent and activates a leaf exactly as before.
+
+Inside the editor:
+
+| Key | Action |
+|---|---|
+| <kbd>Enter</kbd> | Commit. An invalid value keeps the editor open and shows the error |
+| <kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd> | Commit, then focus returns to the cell and the browser moves on (the chart stays one Tab stop). An invalid value is discarded and announced |
+| <kbd>Escape</kbd> | Cancel; nothing is written |
+| Everything else | Native text editing (<kbd>Space</kbd>, <kbd>Delete</kbd>, <kbd>Home</kbd>/<kbd>End</kbd>, <kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> inside the field) |
+
+- **Blur** commits a valid value and discards an invalid one, which is announced. With
+  `commitOnBlur: false` a blur always discards. A blur never pulls focus back to the chart.
+- **Switching to another window or tab** mid-edit counts as a blur: the edit is committed (or
+  discarded with `commitOnBlur: false`).
+- After a commit or a cancel, focus returns to the cell (`preventScroll`), so keyboard users keep
+  their place. Opening an editor while another one is open commits the first one.
+- Pointer events on the editor (clicks, drags, the context menu) never reach selection, task drag
+  or the edit hooks. The mouse **wheel** is not stopped: it still scrolls, and
+  <kbd>Ctrl</kbd>+wheel still zooms, the chart.
+- These events close the editor **without writing**: a column resize, a `collapseBelow` change,
+  `setGridColumns()`, collapsing a parent that hides the row, removing the edited task, and an
+  import. `destroy()` and `unmount()` close it too.
+
+## Calendar rules
+
+Every edit is **one** store write, so it is **one undo entry** and one `task:updated`; in
+`schedulingMode: 'auto'` the dependents' cascade is grouped into the same entry. After the commit,
+<kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> in the chart undoes the whole edit in one step. Dates are computed
+with Temporal in the calendar's time zone, so weekends, holidays, lunch breaks and DST transitions
+are respected ([Working calendar](/docs/concepts/working-calendar)).
+
+- **Start.** A day that is not a working day (a weekend or a holiday) **snaps forward** to the next
+  working day. The bar starts at that day's first working window and **keeps its working duration**
+  (the authored `task.duration` if there is one, otherwise the working hours between the old start
+  and end), so the end moves with it. A milestone moves as a point. `moveTask()` is not used,
+  because it shifts by an exact instant and would ignore non-working time.
+- **End.** A non-working day **snaps back** to the previous working day, and the bar ends at that
+  day's last working window. The end must stay **after** the start, otherwise the edit is rejected
+  with `end-before-start`. It is written with `resizeTask()`, which updates `end` and `duration`
+  together.
+- **Duration.** The number is in the column's `durationUnit`. A day is the sum of the calendar's
+  working windows (8 hours on the default Mon–Fri 9–17 calendar), and the result is written with
+  `resizeTask()`.
+- **Progress** is a percent in the UI and the 0..1 fraction the store uses (`setProgress(id, n / 100)`).
+- **A value that changes nothing writes nothing**: no undo entry, no event; the editor just closes.
+- A calendar with no working hours or no working day cannot place a bar, so start, end and duration
+  edits are rejected on it.
+- When a date was snapped, the announcement says so ("Start: Jan 12, 2026, next working day").
+
+Constraints, the cascade and the critical path behave exactly as they do for any `updateTask()` or
+`resizeTask()` from your own code: the editor adds no scheduling logic of its own.
+
+## Validation and messages
+
+Input is parsed and validated in this order, and the first failure stops:
+
+1. **Parse.** Text loses control and bidi-override characters and is trimmed. Numbers accept the
+   locale's own digits and decimal separator (and `.`), and nothing else: no sign, no grouping
+   separator, no exponent, no hex, at most 32 characters. Progress also accepts a trailing `%` (or the
+   locale's percent sign). A date must be a real `YYYY-MM-DD` day from 1900 to 2200.
+2. **Bounds** (the limits in the table above, or a custom editor's `min` / `max`).
+3. **Semantic**: the end must be after the start.
+4. **Your `beforeCommit`**.
+5. A custom editor's **`commit`**, then the write.
+
+An invalid value sets `aria-invalid="true"` on the input and shows the message under it in a
+`role="alert"` element (with a dashed outline, so the error is not shown by colour alone). WCAG
+2.1.1 (Keyboard) and 3.3.1 (Error Identification).
+
+| `EditErrorReason` | Default English text |
+|---|---|
+| `empty` | Enter a value. |
+| `not-a-number` | Enter a number. |
+| `out-of-range` | Enter a value from MIN to MAX. (Without bounds: The value is out of range.) |
+| `not-a-date` | Enter a valid date. |
+| `end-before-start` | The end must be after the start. |
+| `too-long` | The value is too long. |
+| `rejected` | This value could not be saved. |
+
+Two message keys, both experimental, translate the editor (see [i18n](/docs/i18n#cell-editors)):
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+
+createGantt({
+  tasks,
+  locale: 'de',
+  messages: {
+    // The input's accessible name. Default "<header>, <task name>" ("Duration (days), Design").
+    gridEditLabel: ({ header, taskName }) => `${header} bearbeiten: ${taskName}`,
+    // The inline error. `min` / `max` are set for `out-of-range` on a column with bounds.
+    gridEditError: ({ reason, min, max }) => {
+      switch (reason) {
+        case 'empty': return 'Bitte einen Wert eingeben.';
+        case 'out-of-range': return min !== undefined ? `Erlaubt: ${min} bis ${max}.` : 'Wert außerhalb des Bereichs.';
+        case 'end-before-start': return 'Das Ende muss nach dem Start liegen.';
+        default: return 'Ungültiger Wert.'; // the union may gain reasons
+      }
+    },
+  },
+});
+```
+
+A function that throws or returns a non-string falls back to English. A message you return from
+`beforeCommit` or from a custom `commit` is shown **as given**, not through `gridEditError`; it is
+capped at 200 characters, stripped of control characters and written as text.
+
+The results are announced through the polite live region of `withInteraction` as two new
+`GanttAnnouncement` kinds, `cell-edited` and `cell-edit-failed`
+([Live-region announcements](/docs/i18n#live-region-announcements)).
+
+## Custom editors
+
+A custom column opts in with `editor`, a `CellEditor`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | `'text' \| 'number' \| 'date'` | `number` is a text field with a numeric keyboard and arrives as a number; `date` is a native date field and arrives as `YYYY-MM-DD`. |
+| `commit(input, task, ctx)` | `=> TaskPatch \| { error }` | Maps the validated input to a patch, or returns `{ error: 'message' }` to show inline. Keep it pure; a throw becomes `rejected`. |
+| `maxLength` | `number` | `text` only, at most 1000. |
+| `min` / `max` | `number` | `number` only, finite, `min <= max`. `min` defaults to 0 (a sign cannot be typed). |
+| `initial(task, ctx)` | `=> string` | The text the editor starts with. Default: the cell's unformatted `value()`. |
+
+**`commit` may only write `name`, `start`, `end`, `duration` and `progress`.** Each field is
+validated like the built-in editor for it (`name` up to 500 characters, dates from 1900 to 2200 with
+the end after the start, `duration` in hours from 0 to 87600, `progress` as a 0..1 fraction). Any
+other key, such as `meta`, `color` or `parent`, rejects the whole edit and writes nothing. To edit
+those, replace the editor on [`cell:edit-requested`](#replace-the-editor-celledit-requested). An
+invalid column definition (an unknown `type`, a missing `commit`, `min > max`, or a built-in column
+with an editor object) throws a `RangeError` when the columns are set.
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+import { withRender } from '@fluxgantt/core/render';
+import { withInteraction } from '@fluxgantt/core/interaction';
+import { withGrid, DEFAULT_GRID_COLUMNS } from '@fluxgantt/core/grid';
+import { withGridEditing } from '@fluxgantt/core/grid-editing';
+import type { GridColumnInput } from '@fluxgantt/core/grid';
+
+// Define columns once: their functions should keep a stable identity.
+const columns: GridColumnInput[] = [
+  ...DEFAULT_GRID_COLUMNS.map((c) => (c.id === 'progress' ? { ...c, editor: false as const } : c)),
+  {
+    id: 'done',
+    header: 'Done %',
+    align: 'end',
+    value: (task) => Math.round(task.progress * 100),
+    editor: {
+      type: 'number',
+      min: 0,
+      max: 100,
+      // Progress may only go up in this app.
+      commit: (input, task) =>
+        Number(input) < task.progress * 100 ? { error: 'Progress cannot go down.' } : { progress: Number(input) / 100 },
+    },
+  },
+];
+
+const gantt = withGridEditing(withGrid(withInteraction(withRender(createGantt({ tasks }))), { columns }));
+```
+
+### `beforeCommit`: host validation
+
+`beforeCommit` sees every edit, built-in or custom, after parsing and before the write. It receives a
+`CellEditCommit` (`taskId`, `columnId`, `input`, the parsed value, and `patch`, the fields the write
+will change), and returns a message to block the commit or nothing to allow it. It must not write
+to the store.
+
+```ts
+const gantt = withGridEditing(withGrid(withInteraction(withRender(createGantt({ tasks })))), {
+  isEditable: (task) => task.meta?.status !== 'approved', // approved tasks are frozen
+  beforeCommit: ({ columnId, input }) => {
+    if (columnId === 'name' && typeof input === 'string' && reservedNames.has(input)) {
+      return 'That name is already used by another plan.';
+    }
+    if (columnId === 'duration' && typeof input === 'number' && input > 60) {
+      return 'Split tasks longer than 60 days.';
+    }
+    return undefined; // allow
+  },
+});
+```
+
+## Replace the editor: `cell:edit-requested`
+
+`cell:edit-requested` fires **before** an editor opens, for every gesture and for
+`startCellEdit()`. Call `preventDefault()` **synchronously** in the listener and the built-in editor
+does not open, so you can show your own (a select, a user picker, a dialog) and write the result
+yourself. The payload is a `CellEditRequestedPayload`: `taskId`, `columnId` (`name` included),
+`source` (`'keyboard'` or `'pointer'`) and `clientX` / `clientY`, the centre of the cell in viewport
+coordinates, finite and RTL-aware, for anchoring a popover.
+
+It does **not** fire in a `readOnly` chart or for a cell that is not editable, so a column needs
+an `editor` (any type works, it is never opened) for the event to fire on it. The very first one
+fires one tick late, after the editor chunk has loaded; every later one is synchronous.
+
+```ts
+import { createGantt } from '@fluxgantt/core';
+import { withRender } from '@fluxgantt/core/render';
+import { withInteraction } from '@fluxgantt/core/interaction';
+import { withGrid, DEFAULT_GRID_COLUMNS } from '@fluxgantt/core/grid';
+import { withGridEditing } from '@fluxgantt/core/grid-editing';
+import type { GridColumnInput } from '@fluxgantt/core/grid';
+
+const OWNERS = ['Alice', 'Bảo', 'Chloé'];
+const ownerOf = (meta: Record<string, unknown> | undefined) =>
+  typeof meta?.owner === 'string' ? meta.owner : '';
+
+const columns: GridColumnInput[] = [
+  ...DEFAULT_GRID_COLUMNS,
+  {
+    id: 'owner',
+    header: 'Owner',
+    value: (task) => ownerOf(task.meta),
+    // Never opened (the listener below replaces it); it makes the cell editable.
+    editor: { type: 'text', commit: () => ({ error: 'Pick an owner from the list.' }) },
+  },
+];
+
+const gantt = withGridEditing(withGrid(withInteraction(withRender(createGantt({ tasks }))), { columns }));
+
+gantt.on('cell:edit-requested', (e) => {
+  if (e.columnId !== 'owner') return; // the built-in editors handle the rest
+  e.preventDefault(); // synchronously, or the built-in editor opens
+
+  const opener = document.activeElement as HTMLElement | null;
+  const select = document.createElement('select');
+  for (const name of OWNERS) {
+    const option = document.createElement('option');
+    option.value = name;       // user data as a property ...
+    option.textContent = name; // ... and as text, never through innerHTML
+    select.append(option);
+  }
+  select.value = ownerOf(gantt.getTask(e.taskId)?.meta);
+  select.setAttribute('aria-label', `Owner of ${gantt.getTask(e.taskId)?.name ?? 'task'}`);
+  Object.assign(select.style, { position: 'fixed', left: `${e.clientX}px`, top: `${e.clientY}px` });
+
+  const close = () => {
+    select.remove();
+    opener?.focus({ preventScroll: true }); // give keyboard users their place back
+  };
+  select.addEventListener('change', () => {
+    const task = gantt.getTask(e.taskId);
+    if (task) gantt.updateTask(e.taskId, { meta: { ...task.meta, owner: select.value } }); // one undo entry
+    close();
+  });
+  select.addEventListener('keydown', (k) => {
+    if (k.key === 'Escape') close();
+  });
+  select.addEventListener('blur', () => select.isConnected && select.remove());
+
+  document.body.append(select);
+  select.focus();
+});
+```
+
+:::warning
+**Your editor renders untrusted data.** Task names, `meta` values and anything your users typed are
+untrusted. Put them into the DOM with `textContent`, `value` or `setAttribute`, never with
+`innerHTML` or a template string, and validate what you write back. The built-in editors do the
+same: user text reaches the DOM only as text, and is length-checked, stripped of control and bidi
+characters and parsed before it is written.
+:::
+
+## Edit hooks and editing
+
+[`withEditHooks`](/docs/api#edit-hooks) and `withGridEditing` share the same gestures, and the
+editor wins on an editable cell:
+
+- On an **editable** cell, <kbd>Enter</kbd>, <kbd>F2</kbd>, a double-click and a double-tap open
+  the editor (through `cell:edit-requested`) and do **not** fire `task:activated`.
+  <kbd>F2</kbd> on a row edits its `name` cell, so it does not fire `task:activated` either.
+- On a cell that is **not editable** (a rolled-up cell, `editor: false`, `isEditable` returning
+  `false`, every cell of a `readOnly` chart), and in a chart without `withGridEditing`, the same
+  gestures fire `task:activated` with `part: 'cell'` and `columnId`, as described on the
+  edit-hooks page.
+- A double-click on a **bar** is not a cell gesture and still fires `task:activated`.
+- The context menu (right click, <kbd>ContextMenu</kbd>, <kbd>Shift</kbd>+<kbd>F10</kbd>,
+  long-press) is never claimed by the editor: `task:context-requested` fires as before.
+
+A typical split: edit the plain fields inline, and open your own detail dialog from
+`task:activated` (a double-click on the bar) or from a context-menu entry.
+
+## Read-only charts
+
+With `readOnly: true` **nothing is editable**: no editor opens, `startCellEdit()` returns `false`
+and `cell:edit-requested` never fires. <kbd>Enter</kbd>, <kbd>F2</kbd> and double-click then
+behave exactly as without the mixin (with `withEditHooks`, they fire `task:activated`, which a
+read-only detail card can use). A focused cell gets `aria-readonly="true"`, as does any cell that is
+not editable in an editable chart (the attribute is set when the cell takes focus, not on every
+cell at paint time). Column resizing is view state and stays available. See
+[Read-only mode](/docs/interactions/read-only).
+
+## Right-to-left
+
+Under [`rtl: true`](/docs/rtl) the editor sits over the mirrored cell: it is placed with logical
+insets and its text follows the column's logical `align` (`start`, `center`, `end`), so a `start`
+column's text starts at the right. The editor inherits the chart's `dir`. The anchor in
+`cell:edit-requested` is the centre of the mirrored cell.
+
+## Styling
+
+The editor uses the theme tokens: `--fg-fg` for the text, `--fg-bg` for the background and
+`--fg-task-focus` for its 2 px border, so a [theme](/docs/theming) restyles it. Its elements carry
+the classes `fg-grid__editor-host`, `fg-grid__editor` (the `<input>`) and `fg-grid__edit-error`
+(the message).
+
+## Limits
+
+- **Names**: 1 to 500 characters (the core import cap, so an edited chart still exports what the
+  importer accepts). Custom text editors: `maxLength` at most 1000.
+- **Duration**: 0 to 10 years, that is 3650 days or 87600 hours.
+- **Progress**: 0 to 100 % in the UI, one decimal.
+- **Dates**: from 1900 to 2200.
+- **Numbers**: at most 32 characters, non-negative, no grouping separators or exponents.
+- **Host messages** (`beforeCommit`, a custom `{ error }`): capped at 200 characters.
+- **Not built**: type-to-edit (start typing on a focused cell), range copy and paste, select or
+  user-picker editors. Build the last two on [`cell:edit-requested`](#replace-the-editor-celledit-requested).
+
+## Known limits
+
+- **First-use latency.** The editor code is a lazy chunk (`grid-editing/editing-ui`, in no size
+  budget), preloaded when an editable cell first takes focus. The first key after that may act a
+  moment late, and the first `cell:edit-requested` fires one tick late. A key is never lost: it acts
+  on the cell that has focus once the code has loaded.
+- **SVG at 2,000 rows**: opening and closing an editor costs about 60 ms (measured on a development
+  machine in Chromium; nearly all of it is the browser laying out the chart). The Canvas renderer
+  opens and closes in a few milliseconds.
+- **Canvas**: `startCellEdit()` on a row that is not on screen returns `false` once the editor code
+  has loaded; scroll to the task first (`scrollToTask()` from `withViewport`).
+- **A write that throws after it landed.** `updateTask()` records its history entry before it
+  validates dates, so a custom patch could fail half-way. The editor then undoes exactly that one
+  entry, and if it cannot, it reports the value as saved rather than "not saved".
+- **Concurrent writes.** An external write to the same field while the editor is open does not
+  close it; the last write wins.
+- **Undo inside the field** is the browser's own text undo; the chart's undo is not reachable from
+  the input until the edit is committed.
+
+## Bundle size
+
+A chart that does not compose `withGridEditing` pays nothing for it: every other composition is
+byte-identical. `+ withRender + withInteraction + withGrid + withGridEditing` measures
+{/*sz:gridedit.2*/}28.65{/*/sz*/} KiB gzip (a report-only fixture), and every opt-in mixin composed is
+{/*sz:everything.2*/}39.14{/*/sz*/} KiB against a hard limit of 41.5 KiB. The editor itself is the lazy
+chunk above. These sizes exclude the Temporal polyfill (~45.8 KiB gzip), which runtimes without
+native Temporal (Node 22/24, older browsers) need.
