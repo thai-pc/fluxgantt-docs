@@ -109,9 +109,9 @@ keyboard handling exactly as from a row, **also from a focused cell** (it acts o
 - <kbd>Delete</kbd> / <kbd>Backspace</kbd> still deletes the selected tasks. It does **not** clear
   a cell.
 - <kbd>g</kbd> / <kbd>G</kbd> (go to bar), <kbd>Shift</kbd>+Arrow, undo / redo / duplicate / zoom.
-- <kbd>Enter</kbd> (a parent row still toggles) and <kbd>F2</kbd> (with
-  [`withEditHooks`](/docs/api#edit-hooks)) behave as before. Both are reserved for inline cell
-  editing, which is planned.
+- <kbd>Enter</kbd> and <kbd>F2</kbd> keep their row meanings unless
+  [`withGridEditing`](/docs/interactions/editing-cells) claims them for an editable cell; see
+  [Enter and F2](#enter-and-f2).
 
 The grid also ignores a key when:
 
@@ -120,6 +120,34 @@ The grid also ignores a key when:
 - it arrives during IME composition;
 - it carries <kbd>Ctrl/Cmd</kbd> or <kbd>Shift</kbd> in a combination the grid does not own;
 - an earlier handler already called `preventDefault()` on it.
+
+## Enter and F2
+
+Three mixins can act on <kbd>Enter</kbd> and <kbd>F2</kbd>: `withInteraction`'s keyboard
+navigation (a parent row toggles), [`withEditHooks`](/docs/api#edit-hooks) (`task:activated`) and
+[`withGridEditing`](/docs/interactions/editing-cells) (the inline editor). They resolve in this
+order, the first match wins:
+
+| Focus | Key | With `withGridEditing`, cell editable | Otherwise |
+|---|---|---|---|
+| A cell | <kbd>Enter</kbd> | Opens the editor (`cell:edit-requested` first). No toggle, no `task:activated` | A parent row toggles; on a leaf, `withEditHooks` emits `task:activated` with `part: 'cell'` and `columnId` (`'row'` from the `name` cell) |
+| A cell | <kbd>F2</kbd> | Opens the editor on that cell | `withEditHooks` emits `task:activated` (`part: 'cell'`, or `'row'` from the `name` cell) |
+| A row | <kbd>Enter</kbd> | Not an edit gesture: unchanged | A parent toggles; on a leaf, `task:activated` with `part: 'row'` |
+| A row | <kbd>F2</kbd> | Opens the editor on the row's `name` cell | `task:activated` with `part: 'row'` |
+| A column header | either | Nothing (a header is not a task) | Nothing |
+
+- "Cell editable" means: `withGridEditing` is composed, the chart is not `readOnly`, the cell is
+  editable by the [built-in rules](/docs/interactions/editing-cells#which-cell-gets-which-editor) and
+  `isEditable`, and the key is in `activate`. On any other cell the keys behave as without the
+  editing mixin.
+- With the editor composed, <kbd>Enter</kbd> on the `name` cell of a **parent** opens the name
+  editor instead of toggling the row. Toggle from the row (<kbd>Escape</kbd> or <kbd>←</kbd> back to
+  it, then <kbd>Enter</kbd>, or <kbd>→</kbd> / <kbd>←</kbd> on the row).
+- A key with a modifier, a key during IME composition and a key typed inside an input are never
+  claimed by the editor.
+- Inside an open editor, <kbd>Enter</kbd> commits, <kbd>Escape</kbd> cancels and <kbd>Tab</kbd>
+  commits and moves on; the chart's keys do not run there. See
+  [Gestures](/docs/interactions/editing-cells#gestures).
 
 ## Right-to-left
 
@@ -161,7 +189,7 @@ purpose in these places:
 |---|---|---|---|
 | <kbd>←</kbd> on a collapsed parent or a leaf | Focus does not move | Moves to the **parent row** and selects it | The W3C tree-view behaviour; it is the fastest way back up a deep tree |
 | Tab stop | The roving `tabindex` follows the focused cell | Stays on the row; <kbd>Tab</kbd> from a cell or header leaves via the row | One Tab stop for the whole chart, in both directions, as before the grid |
-| <kbd>Enter</kbd> / <kbd>F2</kbd> on a cell | Activate or edit the cell | Unchanged row behaviour | Reserved for inline editing (planned) |
+| <kbd>Enter</kbd> / <kbd>F2</kbd> on a cell | Activate or edit the cell | Edits the cell with [`withGridEditing`](/docs/interactions/editing-cells) composed and the cell editable; otherwise the row behaviour (toggle, or `task:activated` with `withEditHooks`) | Editing is opt-in; see [Enter and F2](#enter-and-f2) |
 | <kbd>Delete</kbd> on a cell | (not specified; often "clear cell") | Deletes the selected tasks | Keeps the chart's existing shortcut |
 | <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> on a cell | (not specified) | Moves the task | The keyboard task move works from anywhere in the row |
 | <kbd>Escape</kbd> in header mode | (not specified) | Returns to the active row | |

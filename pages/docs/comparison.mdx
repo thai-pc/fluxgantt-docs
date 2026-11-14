@@ -35,7 +35,8 @@ less. That trade is laid out below rather than hidden.
 <tr><td>FluxGantt — <code>+ withRender</code></td><td>{/*sz:render.2*/}15.67{/*/sz*/} KiB</td><td>0</td><td><strong>{/*sz:render.2*/}15.67{/*/sz*/} KiB</strong></td></tr>
 <tr><td>FluxGantt — <code>+ withRender + withInteraction</code></td><td>{/*sz:editable.2*/}21.24{/*/sz*/} KiB</td><td>0</td><td><strong>{/*sz:editable.2*/}21.24{/*/sz*/} KiB</strong></td></tr>
 <tr><td>FluxGantt — <code>+ withIo + withRender + withInteraction</code></td><td>{/*sz:kitchen.2*/}25.92{/*/sz*/} KiB</td><td>0</td><td><strong>{/*sz:kitchen.2*/}25.92{/*/sz*/} KiB</strong></td></tr>
-<tr><td>FluxGantt — every opt-in mixin composed (grid included)</td><td>{/*sz:everything.2*/}37.89{/*/sz*/} KiB</td><td>0</td><td><strong>{/*sz:everything.2*/}37.89{/*/sz*/} KiB</strong></td></tr>
+<tr><td>FluxGantt — <code>+ withRender + withInteraction + withGrid + withGridEditing</code></td><td>{/*sz:gridedit.2*/}28.65{/*/sz*/} KiB</td><td>0</td><td><strong>{/*sz:gridedit.2*/}28.65{/*/sz*/} KiB</strong></td></tr>
+<tr><td>FluxGantt — every opt-in mixin composed (grid and grid editing included)</td><td>{/*sz:everything.2*/}39.14{/*/sz*/} KiB</td><td>0</td><td><strong>{/*sz:everything.2*/}39.14{/*/sz*/} KiB</strong></td></tr>
 </tbody>
 </table>
 
@@ -56,7 +57,7 @@ monoliths, so a bundler cannot drop anything and the entry file *is* what ships.
 FluxGantt is not a favour to FluxGantt — it is what actually happens in your build, and it is the
 only reason a row can read {/*sz:hello.2*/}8.18{/*/sz*/} KiB.
 
-**FluxGantt rows exclude the Temporal polyfill.** Core reads `globalThis.Temporal` and bundles no polyfill. Runtimes without native Temporal (Node 22/24 and older browsers at the time of writing) need `@js-temporal/polyfill`, about 45.8 KiB gzip (`@js-temporal/polyfill@0.5.1` with its `jsbi` dependency, minified). Add that to any FluxGantt row if your users are on such a runtime: an editable chart is then roughly 67 KiB, still well under dhtmlx. Runtimes with native Temporal pay nothing. Every FluxGantt row except `+ withRender` is a hard CI gate (hello world, editable, IO + render + interaction, and every opt-in mixin composed); the other fixtures are tracked report-only.
+**FluxGantt rows exclude the Temporal polyfill.** Core reads `globalThis.Temporal` and bundles no polyfill. Runtimes without native Temporal (Node 22/24 and older browsers at the time of writing) need `@js-temporal/polyfill`, about 45.8 KiB gzip (`@js-temporal/polyfill@0.5.1` with its `jsbi` dependency, minified). Add that to any FluxGantt row if your users are on such a runtime: an editable chart is then roughly 67 KiB, still well under dhtmlx. Runtimes with native Temporal pay nothing. Every FluxGantt row except `+ withRender` and the editable-grid row is a hard CI gate (hello world, editable, IO + render + interaction, and every opt-in mixin composed, limit 41.5 KiB); the other fixtures are tracked report-only. The inline cell editor's own code is a lazy chunk fetched on first use and is in no row.
 
 **FluxGantt rows are measured as ESM output.** `pnpm size` bundles each fixture with esbuild as
 `format: 'esm'`, because that is what a Vite, Rollup, webpack 5 or esbuild build of your app
@@ -134,6 +135,8 @@ up), and its only touch listener is a double-tap detector in `bar.js`, not a dra
 | React / Vue wrappers | ✅ first-party | ❌ | ✅ | ✅ | ❌ |
 | Canvas fallback at scale | ✅ automatic ≥2000 tasks | ❌ | ❌ | ✅ | ❌ |
 | Keyboard navigation + ARIA | ✅ `treegrid`, WCAG 2.1 AA | partial | partial | ✅ | ❌ |
+| Grid columns | ✅ built-in + custom, resizable (experimental) | ✅ | ✅ | ✅ | ❌ |
+| Inline cell editing | ✅ text / date / number editors (experimental, since 0.11.0) | ✅ | ✅ | ✅ | ❌ |
 | Touch-adapted layout | ✅ [`withResponsive()`](/docs/responsive) | partial | ✅ | ✅ | ❌ (`touchstart` is wired for double-tap only) |
 | Export | JSON / CSV / SVG / PNG | limited | + PDF, MS Project | + PDF, MS Project | ❌ |
 | Resource view + leveling | Pro (not yet shipped) | ❌ | ✅ | ✅ | ❌ |
@@ -171,10 +174,14 @@ and its planned Pro licence is meant to remove the SaaS surcharge.
   XML are Wave 2. If you need them now, dhtmlx Community already ships MS Project I/O — for free.
 - **Frappe is smaller and simpler.** If all you need is bars and FS arrows, it is less library to
   own.
-- **The grid is young.** [Grid columns](/docs/concepts/grid-columns) shipped in core 0.9.0 as
-  experimental; column resizing and treegrid cell keyboard navigation followed in 0.10.0. Cells
-  are still read-only and there is no React/Vue wrapper entry yet. dhtmlx, SVAR and Bryntum ship
-  grids with inline editors today.
+- **The grid is young.** [Grid columns](/docs/concepts/grid-columns) shipped in core 0.9.0;
+  column resizing and treegrid cell keyboard navigation followed in 0.10.0, and
+  [inline cell editing](/docs/interactions/editing-cells) plus the React and Vue grid entries in
+  core 0.11.0 / wrappers 0.6.0. All of it is still experimental (`@beta`). The editors cover text,
+  dates and numbers (name, start, end, duration, progress and custom columns). There is no
+  type-to-edit, no range copy and paste, no select or user-picker editor (you build those on the
+  `cell:edit-requested` event), and no sorting or column reordering. dhtmlx, SVAR and Bryntum have
+  shipped grids with richer editors for years.
 - **No Svelte or Angular wrapper yet.** React and Vue only. Svelte and Angular are planned as
   part of the MIT core, not as paid add-ons. SVAR already ships React, Svelte and Vue.
 
@@ -213,7 +220,7 @@ schedules never downloads a renderer.
 git clone https://github.com/thai-pc/fluxgantt
 cd fluxgantt && pnpm install && pnpm build
 
-pnpm size                                             # FluxGantt, all 13 fixtures
+pnpm size                                             # FluxGantt, all 14 fixtures
 node tooling/scripts/measure-competitor-bundles.mjs   # dhtmlx + Frappe, pinned versions
 ```
 

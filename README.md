@@ -47,7 +47,7 @@ After each library release:
 2. Update the figures that used to be machine-synced from the monorepo. **Bundle sizes and other
    numbers are now updated by hand**: re-measure with `pnpm size` in the monorepo and edit the
    values inside the `{/*sz:key.N*/}…{/*/sz*/}` markers (`pages/index.mdx`,
-   `pages/docs/comparison.mdx`, `pages/docs/examples.mdx`). The markers are kept so the figures
+   `pages/docs/comparison.mdx`, `pages/docs/examples.mdx`, `pages/docs/interactions/editing-cells.mdx`). The markers are kept so the figures
    stay easy to find with `grep -rn 'sz:' pages`.
 3. Re-check the quick-start snippet in `pages/docs/quick-start.mdx` against the region marked
    `#region quickstart` in the monorepo's `examples/plain-html-demo/src/main.ts`.

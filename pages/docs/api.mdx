@@ -40,6 +40,7 @@ const gantt = withIo(withInteraction(withRender(createGantt({ tasks: [/* … */]
 | `withEditHooks(instance, options?)` | `@fluxgantt/core/edit-hooks` | No new methods — emits `task:activated` and `task:context-requested` so your app can build its own editor and menu. See [Edit hooks](#edit-hooks) |
 | `withRtl(instance)` | `@fluxgantt/core/rtl` | No new methods — mirrors the chart for right-to-left locales when `rtl: true`; inert otherwise. See [Right-to-left charts](/docs/rtl) |
 | `withGrid(instance, options?)` | `@fluxgantt/core/grid` | **Experimental.** `getGridColumns()`, `setGridColumns()`, `resizeGridColumn()`, `exportGridCsv()` and the `column:resized` event — turns the pinned label column into configurable, resizable columns with treegrid keyboard navigation (SVG and Canvas). See [Grid columns](#grid-columns) |
+| `withGridEditing(instance, options?)` | `@fluxgantt/core/grid-editing` | **Experimental** (since 0.11.0). `startCellEdit()`, `cancelCellEdit()`, `isEditingCell()` and the cancellable `cell:edit-requested` event — inline editors for the grid's cells. Apply after `withGrid` (throws otherwise). See [Grid cell editing](#grid-cell-editing) |
 | `withResponsive(instance, options?)` | `@fluxgantt/core/responsive` | `isCoarsePointer()`, `getLabelColumnWidth()` — and adapts density, hit targets, the label column and touch panning under `(pointer: coarse)`. See [Responsive & touch](/docs/responsive) |
 
 Each mixin mutates and returns the SAME instance, so application order does not matter — but
@@ -50,7 +51,10 @@ effect only on the next mount.
 The React and Vue wrappers compose `withRender` + `withInteraction` + `withEditHooks` + `withViewport` + `withTheme` + `withRtl` for you,
 and forward every `GanttConfig` field. All of them are construction-time only except `onTaskChange` and `theme`, which are
 reactive. The one deliberate deviation from "unset means core default": the wrappers' `theme` defaults to `'light'`, not
-`'auto'` (wrapper charts have always been light); pass `theme="auto"` to follow the OS.
+`'auto'` (wrapper charts have always been light); pass `theme="auto"` to follow the OS. The grid is opt-in there too: the
+`/grid` and `/grid-editing` entries of `@fluxgantt/react` and `@fluxgantt/vue` (since 0.6.0, experimental) add `withGrid`
+and `withGridEditing` to that composition ([React](/docs/frameworks/react#grid-columns-and-cell-editing),
+[Vue](/docs/frameworks/vue#grid-columns-and-cell-editing)).
 
 ## `GanttConfig`
 
@@ -347,13 +351,31 @@ gantt.on('task:context-requested', (p) => {
 
 | Event | Fired by | Payload |
 |---|---|---|
-| `task:activated` | double-click; <kbd>Enter</kbd> on a leaf row; <kbd>F2</kbd> on any row | `{ taskId, part, source: 'pointer' \| 'keyboard', clientX, clientY }` |
-| `task:context-requested` | right-click; <kbd>ContextMenu</kbd> key; <kbd>Shift</kbd>+<kbd>F10</kbd>; touch long-press | `{ taskId, part, source: 'pointer' \| 'keyboard' \| 'long-press', clientX, clientY, preventDefault() }` |
+| `task:activated` | double-click; <kbd>Enter</kbd> on a leaf row; <kbd>F2</kbd> on any row | `{ taskId, part, columnId?, source: 'pointer' \| 'keyboard', clientX, clientY }` |
+| `task:context-requested` | right-click; <kbd>ContextMenu</kbd> key; <kbd>Shift</kbd>+<kbd>F10</kbd>; touch long-press | `{ taskId, part, columnId?, source: 'pointer' \| 'keyboard' \| 'long-press', clientX, clientY, preventDefault() }` |
 
-- **`part`** is `'bar'`, `'label'` or `'row'` (the grid or a dependency arrow). Keyboard gestures
-  always report `'row'`. `'cell'` (with an experimental `columnId` on the payload) is a member of
-  the `TaskHitPart` union reserved for [grid columns](#grid-columns); nothing reports it yet, but
-  an exhaustive `switch` over `part` needs a `default` branch. The collapse toggle glyph, the header and empty space emit nothing.
+- **`part`** is `'bar'`, `'label'`, `'row'` (the timeline grid or a dependency arrow) or, with
+  [grid columns](#grid-columns), `'cell'`. Without a grid, keyboard gestures always report `'row'`.
+  The collapse toggle glyph, the header and empty space emit nothing. An exhaustive `switch` over
+  `part` should keep a `default` branch.
+- **Grid cells (experimental, since 0.11.0).** With `withGrid` composed, a double-click, a context
+  menu (right click, <kbd>ContextMenu</kbd>, <kbd>Shift</kbd>+<kbd>F10</kbd>, a touch long-press),
+  <kbd>F2</kbd> and <kbd>Enter</kbd> on a grid cell report `part: 'cell'` plus `columnId`, the id of
+  the column (custom columns too). In SVG and Canvas, LTR and RTL.
+  - A pointer gesture anywhere in the cell's **full row height** counts, not only on its text.
+  - The keyboard reports the focused cell; its anchor (`clientX` / `clientY`) is still the centre of
+    the focused row. A focused column header is not a task and reports nothing.
+  - **The `name` column keeps its part**: a pointer gesture there is `'label'`, a keyboard gesture
+    from the `name` cell is `'row'`, and neither carries `columnId`.
+  - **Without the grid the `columnId` key is absent** from the payload (not `undefined`), and nothing
+    else changes. One difference when you add `withGrid`: the blank part of the pinned label column
+    emits nothing without a grid and `'label'` with one, because the name column is a cell now.
+  - With [`withGridEditing`](#grid-cell-editing) composed, <kbd>Enter</kbd>, <kbd>F2</kbd>, a
+    double-click and a double-tap on an **editable** cell open the editor (through
+    `cell:edit-requested`) instead, and `task:activated` does not fire for them. On a cell that is not
+    editable, and for the context menu, the hooks fire as described here. See
+    [Edit hooks and editing](/docs/interactions/editing-cells#edit-hooks-and-editing) and
+    [Enter and F2](/docs/interactions/grid-keyboard#enter-and-f2).
   **Canvas mode never reports `'bar'`** (its hit-test is row-wide): treat `'row'` and `'bar'` as
   "the task" and do not rely on `'bar'`.
 - **Coordinates** are viewport (client) coordinates. For keyboard gestures they are the centre of
@@ -379,8 +401,9 @@ gantt.on('task:context-requested', (p) => {
   drag always wins) and 8 px elsewhere. Once it fires, the gesture belongs to your menu: the
   chart ends the press for drag and selection, so moving the finger afterwards moves, resizes and
   links nothing, and releasing does not select. Change the delay with
-  `withEditHooks(gantt, { longPressMs })`; `0` disables it. There is no double-tap activation, so
-  include an "Edit" entry in the long-press menu for touch users. Compose [`withResponsive`](/docs/responsive)
+  `withEditHooks(gantt, { longPressMs })`; `0` disables it. The edit hooks have no double-tap
+  activation, so include an "Edit" entry in the long-press menu for touch users (with
+  [`withGridEditing`](#grid-cell-editing), a double-tap on an editable grid cell opens its editor). Compose [`withResponsive`](/docs/responsive)
   as well so the browser does not claim the gesture for scrolling.
 - **Platform caveats for touch.** On Android 12+ Chrome fires its native `contextmenu` at about
   400 ms, before the 500 ms default; the chart reports the long-press at that moment instead, so
@@ -393,8 +416,9 @@ gantt.on('task:context-requested', (p) => {
   ```
 - **macOS <kbd>Ctrl</kbd>+click** is reported by browsers as a right-click, so it fires
   `task:context-requested` and also toggles the selection.
-- `withEditHooks` is not part of the all-capabilities bundle measured in CI; it adds about 1 KiB
-  gzip over `withRender`. The React and Vue wrappers include it.
+- `withEditHooks` is not in the kitchen-sink fixture; it is in the "every mixin composed" hard
+  gate and adds about 1 KiB gzip over `withRender` (excluding the Temporal polyfill). The React and
+  Vue wrappers include it.
 
 Returning focus is your job: when your editor or menu closes, put focus back where it was so
 keyboard users do not lose their place. Capture `document.activeElement` before you open the
@@ -466,11 +490,54 @@ treegrid cell navigation are described in [Grid columns](/docs/concepts/grid-col
 and [Grid keyboard](/docs/interactions/grid-keyboard).
 
 Types: `GridOptions`, `GridCapability`, `GridColumn`, `GridColumnInput`, `GridColumnBase`,
-`BuiltInColumn`, `BuiltInColumnId`, `CustomColumn`, `GridCellContext`, `ColumnAlign`, `ColumnId`.
+`BuiltInColumn`, `BuiltInColumnId`, `CustomColumn`, `GridCellContext`, `ColumnAlign`, `ColumnId`,
+and `CellEditor` (since 0.11.0: the type of a column's `editor` option, read by
+[`withGridEditing`](#grid-cell-editing); `false` on a built-in column makes it read-only).
 `ColumnResizedPayload` (the [`column:resized`](#gantteventmap) payload) is exported from
 `@fluxgantt/core`. `GanttMessages.gridColumnLabel` (experimental) names a column header for
 assistive technology ([i18n](/docs/i18n#grid-column-headers)); a keyboard column resize is announced
 with the `GanttAnnouncement` kind `column-resized` ([i18n](/docs/i18n#live-region-announcements)).
+
+### Grid cell editing
+
+**Experimental.** Added by `withGridEditing` (`@fluxgantt/core/grid-editing`, since core 0.11.0).
+Apply it **after** `withGrid` (it throws otherwise) and before the first `mount()`. Full guide:
+[Editing cells](/docs/interactions/editing-cells).
+
+```ts
+import { withGrid } from '@fluxgantt/core/grid';
+import { withGridEditing } from '@fluxgantt/core/grid-editing';
+
+const gantt = withGridEditing(withGrid(withInteraction(withRender(createGantt({ tasks })))), {
+  isEditable: (task, columnId) => true, // can only narrow the built-in rules
+  beforeCommit: ({ taskId, columnId, input, patch }) => undefined, // return a message to block
+  activate: ['enter', 'f2', 'dblclick'], // default
+  commitOnBlur: true, // default; false discards on blur
+});
+```
+
+| Method | Returns | Purpose |
+|---|---|---|
+| `startCellEdit(taskId, columnId)` | `boolean` | Open the editor on a cell of the mounted chart, committing an open one first. `false` when the cell is not editable (unknown task or column, `readOnly`, hidden by `collapseBelow`, a rolled-up cell, `isEditable`) or the chart is not mounted. Before the lazy editor code has loaded the first call returns `true` optimistically; after that a host veto or (Canvas) an off-screen row returns `false`. |
+| `cancelCellEdit()` | `void` | Close the open editor without writing. |
+| `isEditingCell()` | `boolean` | Whether an editor is open. |
+
+| Export (`@fluxgantt/core/grid-editing`) | Kind | Purpose |
+|---|---|---|
+| `withGridEditing(instance, options?)` | function | The mixin. |
+| `GridEditingOptions` | type | `isEditable?`, `beforeCommit?`, `activate?`, `commitOnBlur?`. |
+| `GridEditingCapability` | type | The three methods above. |
+| `CellEditCommit` | type | What `beforeCommit` sees: `taskId`, `columnId`, `input` (the parsed value: text, `YYYY-MM-DD`, or a number), `patch` (the fields the write changes; progress as a 0..1 fraction). |
+| `CellEditor` | type | A column's editor: `type` (`'text' \| 'number' \| 'date'`), `commit(input, task, ctx)` returning a `TaskPatch` or `{ error }`, `maxLength?`, `min?`, `max?`, `initial?`. Also exported from `@fluxgantt/core/grid`, where `BuiltInColumn.editor?: false` and `CustomColumn.editor?: CellEditor \| false` use it. A custom `commit` may only write `name`, `start`, `end`, `duration` and `progress`. |
+| `CellEditRequestedPayload` | type | The `cell:edit-requested` payload (also exported from `@fluxgantt/core`). |
+| `EditErrorReason` | type | `'empty' \| 'not-a-number' \| 'out-of-range' \| 'not-a-date' \| 'end-before-start' \| 'too-long' \| 'rejected'` (also exported from `@fluxgantt/core`). |
+
+Each commit is **one** store write (`updateTask`, `resizeTask` or `setProgress`): one undo entry and
+one `task:updated`. A start edit keeps the working duration and snaps forward to a working day; an
+end edit snaps back to one and must stay after the start; a no-op writes nothing. The input is
+named by `messages.gridEditLabel`, errors come from `messages.gridEditError`, and results are
+announced as the `GanttAnnouncement` kinds `cell-edited` and `cell-edit-failed`
+([i18n](/docs/i18n#cell-editors)).
 
 ### Events & lifecycle
 
@@ -504,6 +571,7 @@ with the `GanttAnnouncement` kind `column-resized` ([i18n](/docs/i18n#live-regio
 | `task:activated` | `(payload: TaskActivatedPayload)` — only with `withEditHooks`. See [Edit hooks](#edit-hooks) |
 | `task:context-requested` | `(payload: TaskContextRequestedPayload)` — only with `withEditHooks`. See [Edit hooks](#edit-hooks) |
 | `column:resized` | `(payload: ColumnResizedPayload)` — **experimental** (`@beta`), only with `withGrid` (since 0.10.0). `{ columnId, width, widths }`: the resized column, its new px width, and every configured column id mapped to its px width. Once per committed resize (pointer release, keyboard step, `resizeGridColumn()`); a cancelled drag or a no-op emits nothing. See [Resizing columns](/docs/concepts/grid-columns#the-columnresized-event) |
+| `cell:edit-requested` | `(payload: CellEditRequestedPayload)` — **experimental** (`@beta`), only with `withGridEditing` (since 0.11.0). `{ taskId, columnId, source: 'keyboard' \| 'pointer', clientX, clientY, preventDefault() }`, fired synchronously before a cell editor opens; `clientX` / `clientY` are the cell centre. Call `preventDefault()` synchronously to open your own editor instead. Never fires in a `readOnly` chart or for a cell that is not editable. See [Replace the editor](/docs/interactions/editing-cells#replace-the-editor-celledit-requested) |
 | `renderer:selected` | `(state: { renderer: 'svg' \| 'canvas'; taskCount: number; canvasFallbackReason?: 'dimension-exceeded' \| 'load-failed' \| 'construction-failed' })` |
 
 `on()` returns an `UnsubscribeFn` (`() => void`).
@@ -623,12 +691,14 @@ and paints afterwards, and this event fires once it has (or once the SVG fallbac
 `WorkingHours` · `CriticalPathResult`, `TaskSchedule`, `RollupResult` · `ViewMode`, `Density`,
 `SchedulingMode` · `Conflict`, `ConflictKind` · `GanttConfig`, `GanttInstance`, `GanttEventMap`, `GanttEventName`,
 `UnsubscribeFn` · `EventMeta`, `ViewportChangedPayload`, `RendererSelectedPayload`,
-`ColumnResizedPayload` (experimental),
+`ColumnResizedPayload`, `CellEditRequestedPayload` and `EditErrorReason` (experimental),
 `ImportSummary` (event payloads) · `TaskField`, `TaskUpdatedPayload` (experimental; see
 [`task:updated`](#taskupdated-experimental)) · `GanttMessages` (see [i18n](/docs/i18n)) ·
-`GanttAnnouncement` (experimental, as is the `GanttMessages.announce` member that takes it; kinds `moved`, `resized`, `cannot-move`, `cannot-resize`, `linked`, `link-failed` and, since 0.10.0, `column-resized`, so keep a `default` branch, see [i18n](/docs/i18n#live-region-announcements)) ·
-`TaskHitPart` (`'bar' | 'label' | 'row' | 'cell'`; an output union, handle unknown members).
-Grid types live on `@fluxgantt/core/grid` ([Grid columns](#grid-columns)).
+`GanttAnnouncement` (experimental, as is the `GanttMessages.announce` member that takes it; kinds `moved`, `resized`, `cannot-move`, `cannot-resize`, `linked`, `link-failed`, since 0.10.0 `column-resized` and since 0.11.0 `cell-edited` and `cell-edit-failed`, so keep a `default` branch, see [i18n](/docs/i18n#live-region-announcements)) ·
+`TaskHitPart` (`'bar' | 'label' | 'row' | 'cell'`; an output union, handle unknown members;
+`'cell'` is reported with grid columns since 0.11.0, see [Edit hooks](#edit-hooks)).
+Grid types live on `@fluxgantt/core/grid` ([Grid columns](#grid-columns)) and the editing types on
+`@fluxgantt/core/grid-editing` ([Grid cell editing](#grid-cell-editing)).
 
 ## Deprecated exports
 

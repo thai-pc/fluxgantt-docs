@@ -13,7 +13,7 @@ createGantt({ tasks, locale: 'vi' }); // dates become "5 thg 1, 2026"
 
 That leaves a handful of strings the library itself composes, and all of them are for assistive
 technology rather than text you see on screen: the chart's name, the per-task sentence, grid
-column header names and the live-region announcements.
+column header names, the cell editors' names and errors, and the live-region announcements.
 
 ## The chart's name
 
@@ -103,12 +103,52 @@ createGantt({
 It receives `{ columnId, header, index, count, locale }` (`index` is 1-based). Throwing or
 returning a non-string falls back to the header text.
 
+## Cell editors
+
+With [`withGridEditing`](/docs/interactions/editing-cells) composed (experimental, since core
+0.11.0), the inline editor has two library-composed strings, each with its own experimental key:
+
+- **`messages.gridEditLabel`** names the editor's input. It receives
+  `{ columnId, header, taskName, locale }`; the default is `"<header>, <task name>"` (the duration
+  column adds its unit: `"Duration (days), Design"`).
+- **`messages.gridEditError`** writes the inline validation message. It receives
+  `{ reason, columnId, header, locale, min?, max? }`, where `reason` is an `EditErrorReason`
+  (`empty`, `not-a-number`, `out-of-range`, `not-a-date`, `end-before-start`, `too-long`,
+  `rejected`) and `min` / `max` are set for `out-of-range` on a column with bounds.
+
+```ts
+createGantt({
+  tasks,
+  locale: 'vi',
+  messages: {
+    gridEditLabel: ({ header, taskName }) => `Sửa ${header}: ${taskName}`,
+    gridEditError: ({ reason, min, max }) => {
+      switch (reason) {
+        case 'empty': return 'Vui lòng nhập giá trị.';
+        case 'not-a-number': return 'Vui lòng nhập một số.';
+        case 'out-of-range': return min !== undefined ? `Nhập giá trị từ ${min} đến ${max}.` : 'Giá trị ngoài phạm vi.';
+        case 'not-a-date': return 'Ngày không hợp lệ.';
+        case 'end-before-start': return 'Ngày kết thúc phải sau ngày bắt đầu.';
+        default: return 'Không thể lưu giá trị này.'; // `too-long`, `rejected`, and reasons added later
+      }
+    },
+  },
+});
+```
+
+Throwing or returning a non-string falls back to English. A message your own `beforeCommit` or a
+custom editor's `commit` returns is shown as given, not through `gridEditError`. Numbers are
+parsed in `locale`: the editor accepts the locale's own digits and decimal separator (a German
+user types `2,5`), as well as `.`. The default English errors are listed on
+[Editing cells](/docs/interactions/editing-cells#validation-and-messages).
+
 ## Live-region announcements
 
 With [`withInteraction`](/docs/interactions/drag) composed, the chart owns a polite live region and
 announces the result of a keyboard action there: a task moved, resized or linked from the
 keyboard ([Keyboard alternative to dragging](/docs/interactions/drag#keyboard-alternative-to-dragging)),
-and, with [grid columns](/docs/concepts/grid-columns), a column resized from the keyboard. To
+and, with [grid columns](/docs/concepts/grid-columns), a column resized from the keyboard and the
+result of an [inline cell edit](/docs/interactions/editing-cells). To
 translate or reword them, supply `messages.announce` (experimental, `@beta`). It receives a
 `GanttAnnouncement`, a union discriminated by `kind`, and returns the text to announce:
 
@@ -117,6 +157,8 @@ translate or reword them, supply `messages.announce` (experimental, `@beta`). It
 | `moved`, `resized`, `cannot-move`, `cannot-resize` | <kbd>Alt</kbd>+Arrow / <kbd>Alt</kbd>+<kbd>Shift</kbd>+Arrow on a task row | `id`, `name`, `start`, `end`, `startLabel`, `endLabel`, `locale` |
 | `linked`, `link-failed` | <kbd>Alt</kbd>+<kbd>Enter</kbd> | `fromId`, `toId`, `from`, `to`, `reason?` (`'duplicate'` / `'cycle'` / `'self'`), `locale` |
 | `column-resized` | <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> on a focused grid column header (since core 0.10.0) | `columnId`, `header`, `width` (the resulting width in px, unchanged at a limit), `locale` |
+| `cell-edited` | A grid cell edit was written (`withGridEditing`, since core 0.11.0). English: `Start: Jan 12, 2026, next working day` | `id`, `name` (the task), `columnId`, `header`, `text` (the cell's new display text), `snapped?` (`'next'` / `'previous'` when a date fell on a non-working day and moved), `locale` |
+| `cell-edit-failed` | A cell edit was discarded because its value was invalid when the editor lost focus or on <kbd>Tab</kbd> (since core 0.11.0). English: `Duration not changed: Enter a number.` | `id`, `name`, `columnId`, `header`, `reason` (an `EditErrorReason`), `locale` |
 
 ```ts
 createGantt({
@@ -129,6 +171,8 @@ createGantt({
           return `${a.name} verschoben: ${a.startLabel} bis ${a.endLabel}`;
         case 'column-resized':
           return `${a.header}: ${a.width} Pixel breit`;
+        case 'cell-edited':
+          return `${a.header}: ${a.text}${a.snapped ? ' (nächster Arbeitstag)' : ''}`;
         // …the other kinds…
         default:
           return 'Geändert'; // a kind this code does not know yet
@@ -139,12 +183,13 @@ createGantt({
 ```
 
 - **Keep a `default` branch.** The union is experimental and gains kinds in minor releases
-  (`column-resized` arrived in 0.10.0). Code written before a kind existed must still return
+  (`column-resized` arrived in 0.10.0, `cell-edited` and `cell-edit-failed` in 0.11.0). Code written before a kind existed must still return
   something sensible for it; without a `default` it returns `undefined` at runtime, which falls back
   to the English text.
 - Throwing, or returning a non-string, falls back to the English text (`Name: 160 pixels wide` for
   a column).
-- Pointer drags are never announced, neither of tasks nor of column dividers. Listen to
+- Pointer drags are never announced, neither of tasks nor of column dividers. Cell edits are
+  announced whichever way the editor was opened. Listen to
   `task:moved` / `task:resized` / `column:resized` if your app wants to.
 - Without `withInteraction` there is no live region, so nothing is announced.
 
